@@ -48,7 +48,7 @@ export default function ItemsOut(){
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-3xl font-bold text-gray-800">Barang Keluar</h1>
-          <p className="text-gray-600 mt-1">{isAdmin ? 'ACC peminjaman, barang keluar, dan pengembalian' : 'Ringkasan barang keluar'}</p>
+          <p className="text-gray-600 mt-1">{isAdmin ? 'Setujui peminjaman, barang keluar, dan pengembalian' : 'Ringkasan barang keluar'}</p>
         </div>
       </div>
 
@@ -110,7 +110,7 @@ export default function ItemsOut(){
                     <td className="p-3">{b.expectedReturn || '-'}</td>
                     <td className="p-3">
                       <div className="flex gap-2">
-                        <button onClick={()=>approve(b.id)} className="px-3 py-1 rounded-lg bg-green-600 text-white inline-flex items-center gap-1"><Check size={16}/> ACC</button>
+                        <button onClick={()=>approve(b.id)} className="px-3 py-1 rounded-lg bg-green-600 text-white inline-flex items-center gap-1"><Check size={16}/> Setujui</button>
                         <button onClick={()=>reject(b.id)} className="px-3 py-1 rounded-lg bg-red-600 text-white inline-flex items-center gap-1"><X size={16}/> Tolak</button>
                       </div>
                     </td>

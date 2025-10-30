@@ -11,6 +11,8 @@ export default function Items(){
   const [modal, setModal] = useState(null)
   const [borrowOpen, setBorrowOpen] = useState(false)
   const [borrowForm, setBorrowForm] = useState({ itemId: null, quantity: 1, expectedReturn: '', notes: '' })
+  const [imageMode, setImageMode] = useState('url')
+  const [uploadName, setUploadName] = useState('')
 
   const load = async ()=>{
     const { data } = await api.get('/items'); setItems(data)
@@ -26,14 +28,19 @@ export default function Items(){
 
   const submit = async (e)=>{
     e.preventDefault()
+    const payload = {
+      ...form,
+      stock: Number(form.stock||0),
+      minStock: typeof form.minStock==='number' ? form.minStock : 0
+    }
     if (modal==='add'){
-      const { data } = await api.post('/items', form)
+      const { data } = await api.post('/items', payload)
       setItems([...items, data])
     } else if (modal==='edit'){
-      const { data } = await api.put(`/items/${form.id}`, form)
+      const { data } = await api.put(`/items/${form.id}`, payload)
       setItems(items.map(i=>i.id===data.id?data:i))
     }
-    setModal(null); setForm({})
+    setModal(null); setForm({}); setImageMode('url'); setUploadName('')
   }
 
   const del = async (id)=>{
@@ -56,6 +63,16 @@ export default function Items(){
     const { data } = await api.get('/items'); setItems(data)
   }
 
+  const onSelectFile = async (file)=>{
+    if (!file) return
+    const reader = new FileReader()
+    reader.onload = () => {
+      setForm({...form, image: reader.result})
+      setUploadName(file.name)
+    }
+    reader.readAsDataURL(file)
+  }
+
   return (
     <div className="space-y-6 animate-fadeIn">
       <div className="flex items-center justify-between">
@@ -64,7 +81,12 @@ export default function Items(){
           <p className="text-gray-600 mt-1">Kelola semua barang inventaris Anda</p>
         </div>
         {user.role==='admin' && (
-          <button onClick={()=>{setModal('add'); setForm({})}} className="btn-primary"><Plus size={18}/> Tambah Barang</button>
+          <button
+            onClick={()=>{setModal('add'); setForm({ stock:0, minStock:0 }); setImageMode('url'); setUploadName('')}}
+            className="btn-primary"
+          >
+            <Plus size={18}/> Tambah Barang
+          </button>
         )}
       </div>
 
@@ -88,7 +110,7 @@ export default function Items(){
           <div key={item.id} className="card hover:shadow-xl transition-all group">
             <div className="relative overflow-hidden rounded-lg mb-4">
               <img src={item.image} alt={item.name} className="w-full h-48 object-cover group-hover:scale-110 transition-transform"/>
-              <div className={`absolute top-3 right-3 px-3 py-1 rounded-full text-xs font-semibold ${item.stock<=item.minStock?'bg-red-500 text-white':'bg-green-500 text-white'}`}>
+              <div className={`absolute top-3 right-3 px-3 py-1 rounded-full text-xs font-semibold ${item.stock<= (item.minStock ?? 0) ? 'bg-red-500 text-white' : 'bg-green-500 text-white'}`}>
                 Stok: {item.stock}
               </div>
             </div>
@@ -108,7 +130,7 @@ export default function Items(){
                 <button onClick={()=>{setModal('view'); setForm(item)}} className="btn-secondary flex-1 text-sm"><Eye size={16}/> Detail</button>
                 {user.role==='admin' && (
                   <>
-                    <button onClick={()=>{setModal('edit'); setForm(item)}} className="btn-icon text-blue-600 hover:bg-blue-50"><Edit2 size={16}/></button>
+                    <button onClick={()=>{setModal('edit'); setForm(item); setImageMode('url'); setUploadName('')}} className="btn-icon text-blue-600 hover:bg-blue-50"><Edit2 size={16}/></button>
                     <button onClick={()=>del(item.id)} className="btn-icon text-red-600 hover:bg-red-50"><Trash2 size={16}/></button>
                   </>
                 )}
@@ -133,9 +155,12 @@ export default function Items(){
         <div className="fixed inset-0 bg-black/30 grid place-items-center p-4">
           <div className="card max-w-lg w-full">
             <div className="flex items-center justify-between mb-3">
-              <h3 className="text-lg font-bold">{modal==='add'?'Tambah':'edit' in form ? 'Edit':'Detail'} Barang</h3>
-              <button className="btn-icon" onClick={()=>setModal(null)}>✕</button>
+              <h3 className="text-lg font-bold">
+                {modal==='add'?'Tambah':'edit' in form ? 'Edit':'Detail'} Barang
+              </h3>
+              <button className="btn-icon" onClick={()=>{setModal(null); setImageMode('url'); setUploadName('')}}>✕</button>
             </div>
+
             {modal==='view' ? (
               <div className="space-y-2 text-sm">
                 <p><b>Nama:</b> {form.name}</p>
@@ -143,6 +168,10 @@ export default function Items(){
                 <p><b>Kategori:</b> {form.category}</p>
                 <p><b>Lokasi:</b> {form.location}</p>
                 <p><b>Kondisi:</b> {form.condition}</p>
+                <p><b>Stok:</b> {form.stock}</p>
+                <div className="mt-3">
+                  <img src={form.image} alt={form.name} className="w-full h-56 object-cover rounded-lg"/>
+                </div>
               </div>
             ) : (
               <form onSubmit={submit} className="grid grid-cols-2 gap-3">
@@ -151,11 +180,50 @@ export default function Items(){
                 <input className="input" placeholder="Kategori" value={form.category||''} onChange={e=>setForm({...form,category:e.target.value})}/>
                 <input className="input" placeholder="Lokasi" value={form.location||''} onChange={e=>setForm({...form,location:e.target.value})}/>
                 <input className="input" placeholder="Kondisi" value={form.condition||''} onChange={e=>setForm({...form,condition:e.target.value})}/>
-                <input className="input" placeholder="Stok" type="number" value={form.stock||0} onChange={e=>setForm({...form,stock:+e.target.value})}/>
-                <input className="input" placeholder="Min Stok" type="number" value={form.minStock||0} onChange={e=>setForm({...form,minStock:+e.target.value})}/>
-                <input className="input col-span-2" placeholder="URL Gambar" value={form.image||''} onChange={e=>setForm({...form,image:e.target.value})}/>
+
+                <div className="col-span-2">
+                  <label className="text-sm text-gray-600">Stok</label>
+                  <input
+                    className="input"
+                    type="number"
+                    min={0}
+                    placeholder="Masukkan jumlah stokmu di sini"
+                    value={form.stock ?? 0}
+                    onChange={e=>setForm({...form,stock:+e.target.value})}
+                  />
+                </div>
+
+                <div className="col-span-2">
+                  <div className="flex gap-2 mb-2">
+                    <button type="button" onClick={()=>setImageMode('url')} className={`px-3 py-1 rounded-lg text-sm ${imageMode==='url'?'bg-blue-600 text-white':'bg-gray-100 text-gray-700'}`}>Pakai URL</button>
+                    <button type="button" onClick={()=>setImageMode('upload')} className={`px-3 py-1 rounded-lg text-sm ${imageMode==='upload'?'bg-blue-600 text-white':'bg-gray-100 text-gray-700'}`}>Upload File</button>
+                  </div>
+
+                  {imageMode==='url' ? (
+                    <input className="input" placeholder="URL Gambar" value={form.image||''} onChange={e=>setForm({...form,image:e.target.value})}/>
+                  ) : (
+                    <label className="w-full">
+                      <input
+                        type="file"
+                        accept="image/*"
+                        className="hidden"
+                        onChange={e=>onSelectFile(e.target.files?.[0])}
+                      />
+                      <div className="input cursor-pointer text-gray-600">
+                        {uploadName || 'Pilih file gambar'}
+                      </div>
+                    </label>
+                  )}
+                </div>
+
+                {form.image && (
+                  <div className="col-span-2">
+                    <img src={form.image} alt="preview" className="w-full h-44 object-cover rounded-lg"/>
+                  </div>
+                )}
+
                 <div className="col-span-2 flex justify-end gap-2 mt-2">
-                  <button type="button" className="btn-secondary" onClick={()=>setModal(null)}>Batal</button>
+                  <button type="button" className="btn-secondary" onClick={()=>{setModal(null); setImageMode('url'); setUploadName('')}}>Batal</button>
                   <button className="btn-primary">Simpan</button>
                 </div>
               </form>

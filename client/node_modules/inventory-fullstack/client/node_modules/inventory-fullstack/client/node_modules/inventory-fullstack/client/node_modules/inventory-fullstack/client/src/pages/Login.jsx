@@ -98,7 +98,7 @@ export default function Login({ initialMode = "login" }) {
             className="input"
             value={loginUsername}
             onChange={(e) => setLoginUsername(e.target.value)}
-            placeholder="admin atau user"
+            placeholder="Masukkan Username Anda"
           />
         </div>
         <div>

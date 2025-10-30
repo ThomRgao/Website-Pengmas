@@ -3,7 +3,6 @@
 @tailwind components;
 @tailwind utilities;
 
-/* Custom components to match your design tokens */
 @layer components {
   .card { @apply bg-white rounded-2xl p-5 shadow-sm border border-gray-100; }
   .input { @apply w-full rounded-xl border border-gray-200 px-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-400 bg-white; }

@@ -89,7 +89,7 @@ export default function Borrowing(){
             <option value="all">Semua Status</option>
             <option value="borrowed">Dipinjam</option>
             <option value="returned">Dikembalikan</option>
-            <option value="pending">Menunggu ACC</option>
+            <option value="pending">Menunggu persetujuan</option>
             <option value="rejected">Ditolak</option>
           </select>
           {user.role !== 'admin' && (
@@ -124,7 +124,7 @@ export default function Borrowing(){
                 <td className="p-3">
                   {borrow.status==='borrowed' && <span className="px-3 py-1 bg-yellow-100 text-yellow-700 rounded-full text-sm font-semibold">Dipinjam</span>}
                   {borrow.status==='returned' && <span className="px-3 py-1 bg-green-100 text-green-700 rounded-full text-sm font-semibold">Dikembalikan</span>}
-                  {borrow.status==='pending' && <span className="px-3 py-1 bg-gray-100 text-gray-700 rounded-full text-sm font-semibold">Menunggu ACC</span>}
+                  {borrow.status==='pending' && <span className="px-3 py-1 bg-gray-100 text-gray-700 rounded-full text-sm font-semibold">Menunggu persetujuan</span>}
                   {borrow.status==='rejected' && <span className="px-3 py-1 bg-red-100 text-red-700 rounded-full text-sm font-semibold">Ditolak</span>}
                 </td>
               </tr>

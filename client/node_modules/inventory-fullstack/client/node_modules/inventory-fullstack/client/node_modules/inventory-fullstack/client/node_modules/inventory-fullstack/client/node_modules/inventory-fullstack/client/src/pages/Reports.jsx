@@ -83,7 +83,12 @@ export default function Reports(){
       head:[['No','Kode','Nama','Kategori','Lokasi','Kondisi','Stok','Min Stok','Status']],
       body,
       styles:{ fontSize:9, halign:'left', valign:'middle' },
-      headStyles:{ fillColor:[37,99,235] }
+      headStyles:{ fillColor:[37,99,235], halign:'center' },
+      columnStyles:{
+        0:{ halign:'right', cellWidth:10 },
+        6:{ halign:'right' },
+        7:{ halign:'right' }
+      }
     })
     makeFooter(doc)
     doc.save(`Laporan_Stok_${todayStr().replaceAll('/','-')}.pdf`)
@@ -92,7 +97,6 @@ export default function Reports(){
   const downloadIn = ()=>{
     const doc = new jsPDF('p','mm','a4')
     makeHeader(doc, `Laporan Barang Masuk ${inStart} s.d ${inEnd}`)
-    const subtotal = txIn.reduce((s,x)=>s+(x.totalPrice||0),0)
     const body = txIn.map((t,idx)=>[
       idx+1,
       t.date||'-',
@@ -104,14 +108,23 @@ export default function Reports(){
     ])
     autoTable(doc, {
       startY:34,
-      head:[['No','Tanggal','Barang','Jumlah','Petugas','Keterangan']],
+      head:[['No','Tanggal','Barang','Jumlah','Petugas','Keterangan','Total Harga']],
       body,
       styles:{ fontSize:9 },
-      headStyles:{ fillColor:[16,185,129] }
+      headStyles:{ fillColor:[16,185,129], halign:'center' },
+      columnStyles:{
+        0:{ halign:'right', cellWidth:10 },
+        3:{ halign:'right' },
+        6:{ halign:'right' }
+      }
     })
     const y = doc.lastAutoTable?.finalY || 34
+    const totalMasuk = txIn.reduce((s,x)=>s+(x.quantity||0),0)
+    const totalHarga = txIn.reduce((s,x)=>s+(x.totalPrice||0),0)
     doc.setFontSize(10)
     doc.text(`Total transaksi: ${txIn.length}`, 14, y+8)
+    doc.text(`Total unit masuk: ${fmt(totalMasuk)}`, 14, y+14)
+    doc.text(`Total nilai: Rp ${fmt(totalHarga)}`, 14, y+20)
     makeFooter(doc)
     doc.save(`Laporan_Masuk_${inStart}_sd_${inEnd}.pdf`)
   }
@@ -132,7 +145,11 @@ export default function Reports(){
       head:[['No','Tanggal','Barang','Jumlah','Petugas','Keterangan']],
       body,
       styles:{ fontSize:9 },
-      headStyles:{ fillColor:[239,68,68] }
+      headStyles:{ fillColor:[239,68,68], halign:'center' },
+      columnStyles:{
+        0:{ halign:'right', cellWidth:10 },
+        3:{ halign:'right' }
+      }
     })
     const y = doc.lastAutoTable?.finalY || 34
     const totalKeluar = txOut.reduce((s,x)=>s+(x.quantity||0),0)
@@ -162,7 +179,11 @@ export default function Reports(){
       head:[['No','Barang','Peminjam','Jumlah','Tgl Pinjam','Jatuh Tempo','Tgl Kembali','Status','Catatan']],
       body,
       styles:{ fontSize:8 },
-      headStyles:{ fillColor:[234,179,8] }
+      headStyles:{ fillColor:[234,179,8], halign:'center' },
+      columnStyles:{
+        0:{ halign:'right', cellWidth:10 },
+        3:{ halign:'right' }
+      }
     })
     const y = doc.lastAutoTable?.finalY || 34
     const aktif = borFiltered.filter(b=>b.status==='borrowed').length
@@ -177,25 +198,29 @@ export default function Reports(){
 
   const downloadAll = ()=>{
     const doc = new jsPDF('p','mm','a4')
+
     const txInAll = transactions.filter(x=>x.type==='in' && inRange(x.date, allStart, allEnd))
     const txOutAll = transactions.filter(x=>x.type==='out' && inRange(x.date, allStart, allEnd))
     const borAll = borrowings.filter(b=>inRange(b.borrowDate, allStart, allEnd))
 
-    makeHeader(doc, `Laporan Ringkas Inventaris ${allStart} s.d ${allEnd}`)
-    doc.setFontSize(10)
-    doc.text('Ringkasan',14,34)
+    makeHeader(doc, `Laporan Inventaris Terpadu ${allStart} s.d ${allEnd}`)
+
     autoTable(doc, {
-      startY:38,
-      head:[['Metrik']],
+      startY:34,
+      head:[['Metrik','Nilai']],
       body:[
-        ['Total Item', fmt(items.length)],
+        ['Jumlah Item', fmt(items.length)],
         ['Total Stok', fmt(items.reduce((s,x)=>s+(x.stock||0),0))],
         ['Transaksi Masuk (rentang)', fmt(txInAll.length)],
         ['Transaksi Keluar (rentang)', fmt(txOutAll.length)],
-        ['Peminjaman Aktif (rentang)', fmt(borAll.filter(b=>b.status==='borrowed').length)]
+        ['Peminjaman Aktif (rentang)', fmt(borAll.filter(b=>b.status==='borrowed').length)],
+        ['Dikembalikan (rentang)', fmt(borAll.filter(b=>b.status==='returned').length)],
+        ['Pending (rentang)', fmt(borAll.filter(b=>b.status==='pending').length)],
+        ['Ditolak (rentang)', fmt(borAll.filter(b=>b.status==='rejected').length)]
       ],
       styles:{ fontSize:9 },
-      headStyles:{ fillColor:[59,130,246] }
+      headStyles:{ fillColor:[59,130,246], halign:'center' },
+      columnStyles:{ 1:{ halign:'right' } }
     })
 
     doc.addPage()
@@ -207,17 +232,21 @@ export default function Reports(){
         idx+1,it.code||'-',it.name||'-',it.category||'-',it.location||'-',it.condition||'-',fmt(it.stock||0),fmt(it.minStock||0),it.stock<=it.minStock?'Perlu Restok':'Aman'
       ]),
       styles:{ fontSize:8 },
-      headStyles:{ fillColor:[37,99,235] }
+      headStyles:{ fillColor:[37,99,235], halign:'center' },
+      columnStyles:{ 0:{ cellWidth:10, halign:'right' }, 6:{ halign:'right' }, 7:{ halign:'right' } }
     })
 
     doc.addPage()
     makeHeader(doc, `Lampiran B: Barang Masuk ${allStart} s.d ${allEnd}`)
     autoTable(doc, {
       startY:34,
-      head:[['No','Tanggal','Barang','Jumlah','Petugas','Keterangan']],
-      body: txInAll.map((t,idx)=>[idx+1,t.date||'-',t.itemName||'-',fmt(t.quantity||0),t.userName||'-',t.notes||'-',t.totalPrice?`Rp ${fmt(t.totalPrice)}`:'-']),
+      head:[['No','Tanggal','Barang','Jumlah','Petugas','Keterangan','Total Harga']],
+      body: txInAll.map((t,idx)=>[
+        idx+1,t.date||'-',t.itemName||'-',fmt(t.quantity||0),t.userName||'-',t.notes||'-',t.totalPrice?`Rp ${fmt(t.totalPrice)}`:'-'
+      ]),
       styles:{ fontSize:8 },
-      headStyles:{ fillColor:[16,185,129] }
+      headStyles:{ fillColor:[16,185,129], halign:'center' },
+      columnStyles:{ 0:{ cellWidth:10, halign:'right' }, 3:{ halign:'right' }, 6:{ halign:'right' } }
     })
 
     doc.addPage()
@@ -225,9 +254,12 @@ export default function Reports(){
     autoTable(doc, {
       startY:34,
       head:[['No','Tanggal','Barang','Jumlah','Petugas','Keterangan']],
-      body: txOutAll.map((t,idx)=>[idx+1,t.date||'-',t.itemName||'-',fmt(t.quantity||0),t.userName||'-',t.notes||'-']),
+      body: txOutAll.map((t,idx)=>[
+        idx+1,t.date||'-',t.itemName||'-',fmt(t.quantity||0),t.userName||'-',t.notes||'-'
+      ]),
       styles:{ fontSize:8 },
-      headStyles:{ fillColor:[239,68,68] }
+      headStyles:{ fillColor:[239,68,68], halign:'center' },
+      columnStyles:{ 0:{ cellWidth:10, halign:'right' }, 3:{ halign:'right' } }
     })
 
     doc.addPage()
@@ -239,7 +271,8 @@ export default function Reports(){
         idx+1,b.itemName||'-',b.userName||'-',fmt(b.quantity||0),b.borrowDate||'-',b.expectedReturn||'-',b.returnDate||'-',b.status==='pending'?'Menunggu ACC':b.status==='borrowed'?'Dipinjam':b.status==='returned'?'Dikembalikan':'Ditolak',b.notes||'-'
       ]),
       styles:{ fontSize:8 },
-      headStyles:{ fillColor:[234,179,8] }
+      headStyles:{ fillColor:[234,179,8], halign:'center' },
+      columnStyles:{ 0:{ cellWidth:10, halign:'right' }, 3:{ halign:'right' } }
     })
 
     makeFooter(doc)
