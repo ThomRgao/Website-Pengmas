@@ -1,6 +1,6 @@
 import React from 'react'
-import Login from './Login'
+import { Navigate } from 'react-router-dom'
 
-export default function Register(){
-  return <Login initialMode="register" />
+export default function Register() {
+  return <Navigate to="/login" replace />
 }

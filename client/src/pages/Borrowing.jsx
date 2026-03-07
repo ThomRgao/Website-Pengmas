@@ -1,158 +1,265 @@
 import React, { useEffect, useMemo, useState } from 'react'
-import { Download, Plus } from 'lucide-react'
+import { Check, X, Undo2, Eye } from 'lucide-react'
 import api from '../api'
 
-export default function Borrowing(){
-  const [user] = useState(JSON.parse(localStorage.getItem('user')||'{}'))
-  const [items, setItems] = useState([])
+export default function Borrowing() {
   const [borrowings, setBorrowings] = useState([])
-  const [status, setStatus] = useState('all')
-  const [open, setOpen] = useState(false)
-  const [form, setForm] = useState({ itemId:'', quantity:1, expectedReturn:'', notes:'' })
+  const [publicReturns, setPublicReturns] = useState([])
+  const [filter, setFilter] = useState('all')
+  const [detail, setDetail] = useState(null)
 
-  const load = async ()=>{
-    const [i,b] = await Promise.all([api.get('/items'), api.get('/borrowings')])
-    setItems(i.data); setBorrowings(b.data)
+  const load = async () => {
+    const [bRes, rRes] = await Promise.all([
+      api.get('/borrowings'),
+      api.get('/returns-public')
+    ])
+    setBorrowings(bRes.data || [])
+    setPublicReturns(rRes.data || [])
   }
-  useEffect(()=>{ load() }, [])
 
-  const scoped = useMemo(()=>{
-    if (user.role === 'admin') return borrowings
-    return borrowings.filter(b=>String(b.userId)===String(user.id))
-  },[borrowings,user])
+  useEffect(() => {
+    load()
+  }, [])
 
-  const filtered = useMemo(()=>{
-    if (status==='all') return scoped
-    return scoped.filter(b=>b.status===status)
-  },[scoped,status])
+  const rows = useMemo(() => {
+    let merged = [...borrowings]
 
-  const stats = useMemo(()=>({
-    borrowedNow: scoped.filter(b=>b.status==='borrowed').length,
-    returned: scoped.filter(b=>b.status==='returned').length,
-    dueThisWeek:  scoped.filter(b=>{
-      if (b.status!=='borrowed') return false
-      const d = b.expectedReturn ? new Date(b.expectedReturn) : null
-      if (!d) return false
-      const today = new Date()
-      const start = new Date(today); start.setDate(today.getDate() - today.getDay())
-      const end = new Date(start); end.setDate(start.getDate() + 6)
-      return d>=start && d<=end
-    }).length,
-    overdue: scoped.filter(b=>{
-      if (b.status!=='borrowed') return false
-      const d = b.expectedReturn ? new Date(b.expectedReturn) : null
-      if (!d) return false
-      const today = new Date(new Date().toDateString())
-      return d < today
-    }).length
-  }),[scoped])
+    if (filter === 'return-requested') {
+      return publicReturns
+    }
 
-  const submit = async (e)=>{
-    e.preventDefault()
-    const { data } = await api.post('/borrowings', form)
-    setBorrowings([data, ...borrowings])
-    setOpen(false); setForm({ itemId:'', quantity:1, expectedReturn:'', notes:'' })
-    const { data: itemsNew } = await api.get('/items'); setItems(itemsNew)
+    if (filter === 'all') return merged
+    return merged.filter(b => b.status === filter)
+  }, [borrowings, publicReturns, filter])
+
+  const approve = async id => {
+    await api.patch(`/borrowings/${id}/approve`)
+    await load()
+  }
+
+  const reject = async id => {
+    await api.patch(`/borrowings/${id}/reject`)
+    await load()
+  }
+
+  const confirmReturn = async id => {
+    await api.post(`/borrowings/${id}/return`)
+    await load()
   }
 
   return (
-    <div className="space-y-6 animate-fadeIn">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-3xl font-bold text-gray-800">Riwayat Peminjaman</h1>
-          <p className="text-gray-600 mt-1">Kelola peminjaman barang inventaris</p>
-        </div>
-      </div>
-
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
-        <div className="card bg-gradient-to-br from-blue-50 to-indigo-50 border border-blue-200">
-          <p className="text-xs text-gray-600">Sedang Dipinjam</p>
-          <p className="text-2xl font-bold text-gray-800">{stats.borrowedNow}</p>
-        </div>
-        <div className="card bg-gradient-to-br from-green-50 to-emerald-50 border border-green-200">
-          <p className="text-xs text-gray-600">Sudah Kembali</p>
-          <p className="text-2xl font-bold text-gray-800">{stats.returned}</p>
-        </div>
-        <div className="card bg-gradient-to-br from-amber-50 to-orange-50 border border-amber-200">
-          <p className="text-xs text-gray-600">Jatuh Tempo Minggu Ini</p>
-          <p className="text-2xl font-bold text-gray-800">{stats.dueThisWeek}</p>
-        </div>
-        <div className="card bg-gradient-to-br from-red-50 to-rose-50 border border-red-200">
-          <p className="text-xs text-gray-600">Terlambat</p>
-          <p className="text-2xl font-bold text-gray-800">{stats.overdue}</p>
-        </div>
+    <div className="space-y-6 animate-fadeIn w-full">
+      <div>
+        <h1 className="text-3xl font-bold text-gray-800">Tracking Peminjam</h1>
+        <p className="text-gray-600 mt-1">
+          Lihat identitas, foto kartu identitas, data pengajuan, dan pengembalian publik
+        </p>
       </div>
 
       <div className="card">
-        <div className="flex gap-4">
-          <select className="input w-48" value={status} onChange={e=>setStatus(e.target.value)}>
-            <option value="all">Semua Status</option>
-            <option value="borrowed">Dipinjam</option>
-            <option value="returned">Dikembalikan</option>
-            <option value="pending">Menunggu persetujuan</option>
-            <option value="rejected">Ditolak</option>
-          </select>
-          {user.role !== 'admin' && (
-            <button onClick={()=>setOpen(true)} className="btn-primary"><Plus size={18}/> Pinjam Barang</button>
-          )}
+        <select
+          className="input w-full sm:w-72"
+          value={filter}
+          onChange={e => setFilter(e.target.value)}
+        >
+          <option value="all">Semua Data Peminjaman</option>
+          <option value="pending">Pending</option>
+          <option value="borrowed">Dipinjam</option>
+          <option value="returned">Dikembalikan</option>
+          <option value="rejected">Ditolak</option>
+          <option value="return-requested">Data Pengembalian Publik</option>
+        </select>
+      </div>
+
+      <div className="card p-0 overflow-hidden">
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[980px]">
+            <thead>
+              <tr className="border-b border-gray-200 bg-gray-50">
+                <th className="text-left p-4 font-semibold text-gray-700">Peminjam / Pengembali</th>
+                <th className="text-left p-4 font-semibold text-gray-700">Jenis</th>
+                <th className="text-left p-4 font-semibold text-gray-700">Barang</th>
+                <th className="text-left p-4 font-semibold text-gray-700">Instansi / Keterangan</th>
+                <th className="text-left p-4 font-semibold text-gray-700">Status</th>
+                <th className="text-left p-4 font-semibold text-gray-700">Aksi</th>
+              </tr>
+            </thead>
+
+            <tbody>
+              {rows.map(row => {
+                const isPublicReturn = row.type === 'public-return'
+
+                return (
+                  <tr key={`${isPublicReturn ? 'ret' : 'bor'}-${row.id}`} className="border-b border-gray-100 hover:bg-gray-50 align-top">
+                    <td className="p-4">
+                      <p className="font-medium text-gray-800">
+                        {isPublicReturn ? row.returnerName : row.borrowerName}
+                      </p>
+                      <p className="text-sm text-gray-500">
+                        {isPublicReturn ? row.returnerPhone : row.borrowerPhone}
+                      </p>
+                    </td>
+
+                    <td className="p-4 text-gray-700 capitalize">
+                      {isPublicReturn ? 'pengembalian' : row.borrowType}
+                    </td>
+
+                    <td className="p-4 text-gray-700">
+                      {row.itemName} {row.quantity ? `(${row.quantity} unit)` : ''}
+                    </td>
+
+                    <td className="p-4 text-gray-700">
+                      {isPublicReturn ? (row.returnNotes || '-') : (row.borrowerInstitution || '-')}
+                    </td>
+
+                    <td className="p-4 text-gray-700">
+                      {isPublicReturn ? 'Menunggu Verifikasi' : row.status}
+                    </td>
+
+                    <td className="p-4">
+                      <div className="flex flex-wrap gap-2">
+                        <button
+                          onClick={() => setDetail(row)}
+                          className="btn-icon text-slate-600 hover:bg-slate-50"
+                        >
+                          <Eye size={16} />
+                        </button>
+
+                        {!isPublicReturn && row.status === 'pending' && (
+                          <>
+                            <button
+                              onClick={() => approve(row.id)}
+                              className="px-3 py-1 rounded-lg bg-green-600 text-white inline-flex items-center gap-1"
+                            >
+                              <Check size={16} /> Setujui
+                            </button>
+                            <button
+                              onClick={() => reject(row.id)}
+                              className="px-3 py-1 rounded-lg bg-red-600 text-white inline-flex items-center gap-1"
+                            >
+                              <X size={16} /> Tolak
+                            </button>
+                          </>
+                        )}
+
+                        {!isPublicReturn && row.status === 'borrowed' && (
+                          <button
+                            onClick={() => confirmReturn(row.id)}
+                            className="px-3 py-1 rounded-lg bg-blue-600 text-white inline-flex items-center gap-1"
+                          >
+                            <Undo2 size={16} /> Konfirmasi Kembali
+                          </button>
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+                )
+              })}
+
+              {rows.length === 0 && (
+                <tr>
+                  <td className="p-6 text-gray-500" colSpan={6}>
+                    Tidak ada data
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
         </div>
       </div>
 
-      <div className="card overflow-x-auto">
-        <table className="w-full">
-          <thead>
-            <tr className="border-b border-gray-200">
-              <th className="text-left p-3">Barang</th>
-              {user.role==='admin' && <th className="text-left p-3">Peminjam</th>}
-              <th className="text-left p-3">Jumlah</th>
-              <th className="text-left p-3">Tgl Pinjam</th>
-              <th className="text-left p-3">Tgl Kembali</th>
-              <th className="text-left p-3">Status</th>
-            </tr>
-          </thead>
-          <tbody>
-            {filtered.map(borrow=>(
-              <tr key={borrow.id} className="border-b border-gray-100 hover:bg-gray-50">
-                <td className="p-3">
-                  <p className="font-medium text-gray-800">{borrow.itemName}</p>
-                  <p className="text-sm text-gray-500">{borrow.notes}</p>
-                </td>
-                {user.role==='admin' && <td className="p-3 text-gray-600">{borrow.userName}</td>}
-                <td className="p-3"><span className="px-3 py-1 bg-blue-100 text-blue-700 rounded-full text-sm font-semibold">{borrow.quantity} unit</span></td>
-                <td className="p-3 text-gray-600">{borrow.borrowDate || '-'}</td>
-                <td className="p-3 text-gray-600">{borrow.returnDate || borrow.expectedReturn || '-'}</td>
-                <td className="p-3">
-                  {borrow.status==='borrowed' && <span className="px-3 py-1 bg-yellow-100 text-yellow-700 rounded-full text-sm font-semibold">Dipinjam</span>}
-                  {borrow.status==='returned' && <span className="px-3 py-1 bg-green-100 text-green-700 rounded-full text-sm font-semibold">Dikembalikan</span>}
-                  {borrow.status==='pending' && <span className="px-3 py-1 bg-gray-100 text-gray-700 rounded-full text-sm font-semibold">Menunggu persetujuan</span>}
-                  {borrow.status==='rejected' && <span className="px-3 py-1 bg-red-100 text-red-700 rounded-full text-sm font-semibold">Ditolak</span>}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-
-      {open && (
-        <div className="fixed inset-0 bg-black/30 grid place-items-center p-4">
-          <div className="card max-w-md w-full">
-            <div className="flex items-center justify-between mb-3">
-              <h3 className="text-lg font-bold">Pinjam Barang</h3>
-              <button className="btn-icon" onClick={()=>setOpen(false)}>✕</button>
-            </div>
-            <form onSubmit={submit} className="grid grid-cols-2 gap-3">
-              <select className="input col-span-2" value={form.itemId} onChange={e=>setForm({...form,itemId:e.target.value})}>
-                <option value="">Pilih Barang</option>
-                {items.map(i=>(<option key={i.id} value={i.id}>{i.name}</option>))}
-              </select>
-              <input className="input" type="number" min={1} placeholder="Jumlah" value={form.quantity} onChange={e=>setForm({...form,quantity:+e.target.value})}/>
-              <input className="input" type="date" placeholder="Jatuh Tempo" value={form.expectedReturn} onChange={e=>setForm({...form,expectedReturn:e.target.value})}/>
-              <input className="input col-span-2" placeholder="Catatan" value={form.notes} onChange={e=>setForm({...form,notes:e.target.value})}/>
-              <div className="col-span-2 flex justify-end gap-2 mt-2">
-                <button type="button" className="btn-secondary" onClick={()=>setOpen(false)}>Batal</button>
-                <button className="btn-primary">Ajukan</button>
+      {detail && (
+        <div className="fixed inset-0 z-50 bg-black/40 backdrop-blur-[2px] p-4">
+          <div className="w-full h-full flex items-center justify-center">
+            <div className="w-full max-w-6xl bg-white rounded-[28px] shadow-2xl border border-slate-100 overflow-hidden max-h-[94vh] flex flex-col">
+              <div className="px-6 py-5 border-b border-slate-100 flex items-start justify-between gap-4 shrink-0">
+                <div>
+                  <h3 className="text-2xl font-extrabold text-slate-800">
+                    Detail Pengajuan
+                  </h3>
+                  <p className="text-sm text-slate-500 mt-1">
+                    Detail lengkap data yang dipilih
+                  </p>
+                </div>
+                <button className="btn-icon shrink-0" onClick={() => setDetail(null)}>
+                  ✕
+                </button>
               </div>
-            </form>
+
+              <div className="overflow-y-auto px-6 py-6">
+                {detail.type === 'public-return' ? (
+                  <div className="grid grid-cols-1 xl:grid-cols-2 gap-8">
+                    <div className="space-y-3 text-sm">
+                      <p><b>Nama Pengembali:</b> {detail.returnerName}</p>
+                      <p><b>No. HP:</b> {detail.returnerPhone}</p>
+                      <p><b>Barang:</b> {detail.itemName}</p>
+                      <p><b>Kondisi Barang:</b> {detail.conditionOnReturn}</p>
+                      <p><b>Catatan:</b> {detail.returnNotes || '-'}</p>
+                      <p><b>Tanggal Submit:</b> {detail.submittedAt || '-'}</p>
+                    </div>
+
+                    <div>
+                      <p className="font-semibold text-gray-800 mb-3">Foto Barang Pengembalian</p>
+                      {detail.returnPhoto ? (
+                        <img
+                          src={detail.returnPhoto}
+                          alt="Barang Dikembalikan"
+                          className="w-full h-[420px] object-cover rounded-2xl border border-gray-200"
+                        />
+                      ) : (
+                        <div className="text-sm text-gray-500">Belum ada foto pengembalian</div>
+                      )}
+                    </div>
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-1 xl:grid-cols-2 gap-8">
+                    <div className="space-y-3 text-sm">
+                      <p><b>Nama:</b> {detail.borrowerName}</p>
+                      <p><b>Email:</b> {detail.borrowerEmail || '-'}</p>
+                      <p><b>HP:</b> {detail.borrowerPhone}</p>
+                      <p><b>Instansi:</b> {detail.borrowerInstitution}</p>
+                      <p><b>Alamat:</b> {detail.borrowerAddress || '-'}</p>
+                      <p><b>No Identitas:</b> {detail.identityNumber}</p>
+                      <p><b>Jenis:</b> {detail.borrowType}</p>
+                      <p><b>Barang:</b> {detail.itemName}</p>
+                      <p><b>Jumlah:</b> {detail.quantity}</p>
+                      <p><b>Keperluan:</b> {detail.notes || '-'}</p>
+                      <p><b>Rencana Kembali:</b> {detail.expectedReturn || '-'}</p>
+                      <p><b>Durasi:</b> {detail.durationDays || 0} hari</p>
+                      <p><b>Status:</b> {detail.status}</p>
+                    </div>
+
+                    <div className="space-y-6">
+                      <div>
+                        <p className="font-semibold text-gray-800 mb-3">Foto Kartu Identitas</p>
+                        {detail.identityPhoto ? (
+                          <img
+                            src={detail.identityPhoto}
+                            alt="Kartu Identitas"
+                            className="w-full h-[320px] object-cover rounded-2xl border border-gray-200"
+                          />
+                        ) : (
+                          <div className="text-sm text-gray-500">Belum ada foto identitas</div>
+                        )}
+                      </div>
+
+                      <div>
+                        <p className="font-semibold text-gray-800 mb-3">Foto Barang Pengembalian</p>
+                        {detail.returnPhoto ? (
+                          <img
+                            src={detail.returnPhoto}
+                            alt="Barang Dikembalikan"
+                            className="w-full h-[320px] object-cover rounded-2xl border border-gray-200"
+                          />
+                        ) : (
+                          <div className="text-sm text-gray-500">Belum ada foto pengembalian</div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
           </div>
         </div>
       )}
