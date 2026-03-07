@@ -325,11 +325,11 @@ export default function DashboardPublic() {
               </span>
 
               <h2 className="mt-5 text-3xl sm:text-4xl md:text-5xl font-extrabold leading-tight">
-                Website peminjaman publik yang simpel, jelas, dan mudah dipakai
+                Inventoris Barang
               </h2>
 
               <p className="mt-4 text-white/85 text-base sm:text-lg max-w-2xl">
-                Pengunjung cukup memilih barang yang tersedia, lalu tekan tombol
+                Cukup memilih barang yang tersedia, lalu tekan tombol
                 <span className="font-bold"> Peminjaman </span>
                 atau
                 <span className="font-bold"> Penyewaan</span>. Untuk pengembalian, gunakan form khusus yang tersedia di halaman ini.
