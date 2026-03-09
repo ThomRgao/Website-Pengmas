@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react'
-import { Eye, EyeOff, QrCode } from 'lucide-react'
+import { Eye, EyeOff, QrCode, MessageCircle, Link2, Image as ImageIcon, Phone } from 'lucide-react'
 import api from '../api'
 
 export default function Settings() {
@@ -14,9 +14,18 @@ export default function Settings() {
   const [savingPw, setSavingPw] = useState(false)
   const [pwMsg, setPwMsg] = useState(null)
 
-  const [rentalQrLink, setRentalQrLink] = useState('')
-  const [savingQr, setSavingQr] = useState(false)
-  const [qrMsg, setQrMsg] = useState(null)
+  const [rentalQrisLink, setRentalQrisLink] = useState('')
+  const [rentalQrisImage, setRentalQrisImage] = useState('')
+  const [adminWhatsappNumber, setAdminWhatsappNumber] = useState('')
+  const [whatsappApiUrl, setWhatsappApiUrl] = useState('')
+  const [whatsappApiToken, setWhatsappApiToken] = useState('')
+  const [whatsappMessageTemplate, setWhatsappMessageTemplate] = useState(
+    'Halo Admin, ada pengajuan penyewaan baru atas nama {{name}} untuk barang {{itemName}} sejumlah {{quantity}} unit. Bukti pembayaran sudah diupload.'
+  )
+
+  const [savingQris, setSavingQris] = useState(false)
+  const [qrisMsg, setQrisMsg] = useState(null)
+  const [qrisUploadName, setQrisUploadName] = useState('')
 
   useEffect(() => {
     try {
@@ -28,7 +37,15 @@ export default function Settings() {
   useEffect(() => {
     ;(async () => {
       const { data } = await api.get('/public-config')
-      setRentalQrLink(data?.rentalQrLink || '')
+      setRentalQrisLink(data?.rentalQrisLink || data?.rentalQrLink || '')
+      setRentalQrisImage(data?.rentalQrisImage || '')
+      setAdminWhatsappNumber(data?.adminWhatsappNumber || '')
+      setWhatsappApiUrl(data?.whatsappApiUrl || '')
+      setWhatsappApiToken(data?.whatsappApiToken || '')
+      setWhatsappMessageTemplate(
+        data?.whatsappMessageTemplate ||
+          'Halo Admin, ada pengajuan penyewaan baru atas nama {{name}} untuk barang {{itemName}} sejumlah {{quantity}} unit. Bukti pembayaran sudah diupload.'
+      )
     })()
   }, [])
 
@@ -67,22 +84,46 @@ export default function Settings() {
     }
   }
 
-  const saveQr = async e => {
+  const onSelectQrisImage = file => {
+    if (!file) return
+
+    const reader = new FileReader()
+    reader.onload = () => {
+      setRentalQrisImage(reader.result)
+      setQrisUploadName(file.name || 'qris-image')
+    }
+    reader.readAsDataURL(file)
+  }
+
+  const saveQris = async e => {
     e.preventDefault()
-    setQrMsg(null)
+    setQrisMsg(null)
 
     try {
-      setSavingQr(true)
-      const { data } = await api.put('/public-config/rental-qr', { rentalQrLink })
-      setRentalQrLink(data?.rentalQrLink || '')
-      setQrMsg({ type: 'success', text: 'Link QR penyewaan berhasil disimpan' })
+      setSavingQris(true)
+      const { data } = await api.put('/public-config/qris', {
+        rentalQrisLink,
+        rentalQrisImage,
+        adminWhatsappNumber,
+        whatsappApiUrl,
+        whatsappApiToken,
+        whatsappMessageTemplate
+      })
+
+      setRentalQrisLink(data?.rentalQrisLink || '')
+      setRentalQrisImage(data?.rentalQrisImage || '')
+      setAdminWhatsappNumber(data?.adminWhatsappNumber || '')
+      setWhatsappApiUrl(data?.whatsappApiUrl || '')
+      setWhatsappApiToken(data?.whatsappApiToken || '')
+      setWhatsappMessageTemplate(data?.whatsappMessageTemplate || '')
+      setQrisMsg({ type: 'success', text: 'Pengaturan QRIS dan WhatsApp admin berhasil disimpan' })
     } catch (err) {
-      setQrMsg({
+      setQrisMsg({
         type: 'error',
-        text: err?.response?.data?.error || 'Gagal menyimpan link QR'
+        text: err?.response?.data?.error || 'Gagal menyimpan pengaturan QRIS / WhatsApp'
       })
     } finally {
-      setSavingQr(false)
+      setSavingQris(false)
     }
   }
 
@@ -90,7 +131,9 @@ export default function Settings() {
     <div className="space-y-6 animate-fadeIn">
       <div>
         <h1 className="text-3xl font-bold text-gray-800">Pengaturan</h1>
-        <p className="text-gray-600 mt-1">Kelola pengaturan akun admin dan QR penyewaan</p>
+        <p className="text-gray-600 mt-1">
+          Kelola pengaturan akun admin, QRIS penyewaan, dan integrasi WhatsApp admin
+        </p>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -121,40 +164,117 @@ export default function Settings() {
         <div className="card lg:col-span-3">
           <div className="flex items-center gap-2 mb-3">
             <QrCode className="text-blue-600" />
-            <h3 className="text-lg font-bold">QR Statis Penyewaan</h3>
+            <h3 className="text-lg font-bold">QRIS Penyewaan</h3>
           </div>
 
-          <form onSubmit={saveQr} className="space-y-3">
-            <div>
-              <label className="text-sm text-gray-600">Link tujuan QR</label>
-              <input
-                className="input"
-                value={rentalQrLink}
-                onChange={e => setRentalQrLink(e.target.value)}
-                placeholder="https://link-yang-akan-dibuka-saat-qr-discanning"
-              />
+          <form onSubmit={saveQris} className="space-y-5">
+            <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
+              <div>
+                <label className="text-sm text-gray-600">Link QRIS</label>
+                <input
+                  className="input"
+                  value={rentalQrisLink}
+                  onChange={e => setRentalQrisLink(e.target.value)}
+                  placeholder="https://link-qris-atau-deeplink-pembayaran"
+                />
+              </div>
+
+              <div>
+                <label className="text-sm text-gray-600">Nomor WhatsApp Admin</label>
+                <input
+                  className="input"
+                  value={adminWhatsappNumber}
+                  onChange={e => setAdminWhatsappNumber(e.target.value)}
+                  placeholder="628xxxxxxxxxx"
+                />
+              </div>
+
+              <div>
+                <label className="text-sm text-gray-600">URL API WhatsApp</label>
+                <input
+                  className="input"
+                  value={whatsappApiUrl}
+                  onChange={e => setWhatsappApiUrl(e.target.value)}
+                  placeholder="https://domain-api-whatsapp/send-message"
+                />
+              </div>
+
+              <div>
+                <label className="text-sm text-gray-600">Token API WhatsApp</label>
+                <input
+                  className="input"
+                  value={whatsappApiToken}
+                  onChange={e => setWhatsappApiToken(e.target.value)}
+                  placeholder="Bearer token / API token"
+                />
+              </div>
             </div>
 
-            {rentalQrLink && (
-              <div className="rounded-2xl border border-blue-100 bg-blue-50 p-4 flex flex-col items-center gap-3">
-                <img
-                  src={`https://api.qrserver.com/v1/create-qr-code/?size=220x220&data=${encodeURIComponent(
-                    rentalQrLink
-                  )}`}
-                  alt="QR Penyewaan"
-                  className="rounded-xl border border-blue-200 bg-white p-2"
+            <div>
+              <label className="text-sm text-gray-600 mb-2 block">Upload Gambar QRIS</label>
+              <label className="w-full">
+                <input
+                  type="file"
+                  accept="image/*"
+                  className="hidden"
+                  onChange={e => onSelectQrisImage(e.target.files?.[0])}
                 />
-                <p className="text-sm text-blue-700 break-all text-center">{rentalQrLink}</p>
+                <div className="input cursor-pointer text-gray-600">
+                  {qrisUploadName || 'Pilih gambar QRIS'}
+                </div>
+              </label>
+            </div>
+
+            <div>
+              <label className="text-sm text-gray-600">Template Pesan WhatsApp</label>
+              <textarea
+                className="input min-h-[120px]"
+                value={whatsappMessageTemplate}
+                onChange={e => setWhatsappMessageTemplate(e.target.value)}
+                placeholder="Gunakan placeholder {{name}}, {{itemName}}, {{quantity}}, {{type}}, {{expectedReturn}}"
+              />
+              <p className="text-xs text-gray-500 mt-2">
+                Placeholder yang bisa dipakai: {'{{name}}'}, {'{{itemName}}'}, {'{{quantity}}'}, {'{{type}}'}, {'{{expectedReturn}}'}
+              </p>
+            </div>
+
+            {(rentalQrisImage || rentalQrisLink) && (
+              <div className="rounded-2xl border border-blue-100 bg-blue-50 p-4 flex flex-col items-center gap-3">
+                {rentalQrisImage ? (
+                  <img
+                    src={rentalQrisImage}
+                    alt="QRIS Penyewaan"
+                    className="rounded-xl border border-blue-200 bg-white p-2 max-w-[260px] max-h-[260px] object-contain"
+                  />
+                ) : (
+                  <img
+                    src={`https://api.qrserver.com/v1/create-qr-code/?size=220x220&data=${encodeURIComponent(
+                      rentalQrisLink
+                    )}`}
+                    alt="QRIS Penyewaan"
+                    className="rounded-xl border border-blue-200 bg-white p-2"
+                  />
+                )}
+
+                {rentalQrisLink && (
+                  <p className="text-sm text-blue-700 break-all text-center">{rentalQrisLink}</p>
+                )}
+
+                {adminWhatsappNumber && (
+                  <p className="text-sm text-blue-800 text-center">
+                    Notifikasi penyewaan akan diarahkan ke nomor admin: <b>{adminWhatsappNumber}</b>
+                  </p>
+                )}
               </div>
             )}
 
-            <div className="flex items-center gap-3">
-              <button className="btn-primary" disabled={savingQr}>
-                {savingQr ? 'Menyimpan...' : 'Simpan Link QR'}
+            <div className="flex items-center gap-3 flex-wrap">
+              <button className="btn-primary" disabled={savingQris}>
+                {savingQris ? 'Menyimpan...' : 'Simpan Pengaturan QRIS & WhatsApp'}
               </button>
-              {qrMsg && (
-                <span className={`${qrMsg.type === 'success' ? 'text-emerald-600' : 'text-red-600'} text-sm font-medium`}>
-                  {qrMsg.text}
+              {qrisMsg && (
+                <span className={`${qrisMsg.type === 'success' ? 'text-emerald-600' : 'text-red-600'} text-sm font-medium`}>
+                  {qrisMsg.text}
                 </span>
               )}
             </div>
@@ -167,8 +287,17 @@ export default function Settings() {
             <div>
               <label className="text-sm text-gray-600">Password Saat Ini</label>
               <div className="relative">
-                <input className="input pr-10" type={showCur ? 'text' : 'password'} value={currentPassword} onChange={e => setCurrentPassword(e.target.value)} />
-                <button type="button" onClick={() => setShowCur(s => !s)} className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-700">
+                <input
+                  className="input pr-10"
+                  type={showCur ? 'text' : 'password'}
+                  value={currentPassword}
+                  onChange={e => setCurrentPassword(e.target.value)}
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowCur(s => !s)}
+                  className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-700"
+                >
                   {showCur ? <EyeOff size={18} /> : <Eye size={18} />}
                 </button>
               </div>
@@ -177,8 +306,17 @@ export default function Settings() {
             <div>
               <label className="text-sm text-gray-600">Password Baru</label>
               <div className="relative">
-                <input className="input pr-10" type={showNew ? 'text' : 'password'} value={newPassword} onChange={e => setNewPassword(e.target.value)} />
-                <button type="button" onClick={() => setShowNew(s => !s)} className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-700">
+                <input
+                  className="input pr-10"
+                  type={showNew ? 'text' : 'password'}
+                  value={newPassword}
+                  onChange={e => setNewPassword(e.target.value)}
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowNew(s => !s)}
+                  className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-700"
+                >
                   {showNew ? <EyeOff size={18} /> : <Eye size={18} />}
                 </button>
               </div>
@@ -187,8 +325,17 @@ export default function Settings() {
             <div>
               <label className="text-sm text-gray-600">Konfirmasi Password Baru</label>
               <div className="relative">
-                <input className="input pr-10" type={showCfm ? 'text' : 'password'} value={confirmPassword} onChange={e => setConfirmPassword(e.target.value)} />
-                <button type="button" onClick={() => setShowCfm(s => !s)} className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-700">
+                <input
+                  className="input pr-10"
+                  type={showCfm ? 'text' : 'password'}
+                  value={confirmPassword}
+                  onChange={e => setConfirmPassword(e.target.value)}
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowCfm(s => !s)}
+                  className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-700"
+                >
                   {showCfm ? <EyeOff size={18} /> : <Eye size={18} />}
                 </button>
               </div>

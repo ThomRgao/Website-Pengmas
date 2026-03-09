@@ -1,0 +1,12 @@
+[
+  {
+    "id": 1,
+    "username": "admin",
+    "password": "admin",
+    "role": "admin",
+    "fullName": "Administrator",
+    "email": "admin@inventory.com",
+    "status": "active",
+    "joinDate": "2024-01-15"
+  }
+]

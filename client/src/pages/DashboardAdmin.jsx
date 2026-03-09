@@ -4,7 +4,9 @@ import {
   ShoppingCart,
   TrendingUp,
   TrendingDown,
-  ClipboardList
+  ClipboardList,
+  Wallet,
+  RefreshCcw
 } from 'lucide-react'
 import api from '../api'
 import ReactApexChart from 'react-apexcharts'
@@ -38,9 +40,12 @@ export default function DashboardAdmin() {
     const itemsOut = transactions
       .filter(t => t.type === 'out')
       .reduce((s, t) => s + Number(t.quantity || 0), 0)
-    const availableUnits = Math.max(totalItems - borrowedUnits, 0)
+    const availableUnits = Math.max(totalItems, 0)
     const pending = borrowings.filter(b => b.status === 'pending').length
     const rentalCount = borrowings.filter(b => b.borrowType === 'penyewaan').length
+    const returnPending = borrowings.filter(
+      b => b.status === 'borrowed' && b.returnRequestStatus === 'pending'
+    ).length
 
     return {
       totalItems,
@@ -50,7 +55,8 @@ export default function DashboardAdmin() {
       itemsOut,
       availableUnits,
       pending,
-      rentalCount
+      rentalCount,
+      returnPending
     }
   }, [items, transactions, borrowings])
 
@@ -145,7 +151,7 @@ export default function DashboardAdmin() {
         </div>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-6 gap-6">
+      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-7 gap-6">
         <div className="stat-card bg-gradient-to-br from-blue-500 to-blue-600 text-white">
           <p className="text-blue-100 text-sm font-medium">Total Unit</p>
           <h3 className="text-3xl font-bold mt-2">{stats.totalItems}</h3>
@@ -179,7 +185,13 @@ export default function DashboardAdmin() {
         <div className="stat-card bg-gradient-to-br from-pink-500 to-rose-600 text-white">
           <p className="text-pink-100 text-sm font-medium">Penyewaan</p>
           <h3 className="text-3xl font-bold mt-2">{stats.rentalCount}</h3>
-          <div className="mt-3"><ClipboardList size={28} /></div>
+          <div className="mt-3"><Wallet size={28} /></div>
+        </div>
+
+        <div className="stat-card bg-gradient-to-br from-indigo-500 to-fuchsia-600 text-white">
+          <p className="text-indigo-100 text-sm font-medium">Return Pending</p>
+          <h3 className="text-3xl font-bold mt-2">{stats.returnPending}</h3>
+          <div className="mt-3"><RefreshCcw size={28} /></div>
         </div>
       </div>
 
@@ -212,7 +224,7 @@ export default function DashboardAdmin() {
       <div className="card">
         <h3 className="text-xl font-bold text-gray-800 mb-4">Pengajuan Terbaru</h3>
         <div className="space-y-3">
-          {borrowings.slice(0, 6).map(b => (
+          {borrowings.slice(0, 8).map(b => (
             <div
               key={b.id}
               className="flex items-center justify-between gap-4 p-3 bg-gray-50 rounded-lg"
@@ -225,9 +237,19 @@ export default function DashboardAdmin() {
                   {b.borrowType === 'penyewaan' ? 'Penyewaan' : 'Peminjaman'} • {b.quantity} unit
                 </p>
               </div>
-              <span className="text-sm font-semibold text-gray-700">{b.status}</span>
+              <span className="text-sm font-semibold text-gray-700">
+                {b.status === 'borrowed' && b.returnRequestStatus === 'pending'
+                  ? 'Menunggu Verifikasi Return'
+                  : b.status}
+              </span>
             </div>
           ))}
+
+          {borrowings.length === 0 && (
+            <div className="text-sm text-gray-500">
+              Belum ada data pengajuan terbaru.
+            </div>
+          )}
         </div>
       </div>
     </div>

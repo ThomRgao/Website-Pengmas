@@ -2,222 +2,300 @@ import express from 'express'
 import cors from 'cors'
 import jwt from 'jsonwebtoken'
 import dotenv from 'dotenv'
+import fs from 'fs'
+import path from 'path'
+import { fileURLToPath } from 'url'
 
 dotenv.config()
 
 const app = express()
 app.use(cors())
-app.use(express.json({ limit: '15mb' }))
+app.use(express.json({ limit: '30mb' }))
 
 const JWT_SECRET = process.env.JWT_SECRET || 'devsecret_super_secret_replace_me'
 const PORT = process.env.PORT || 5000
 
-let publicConfig = {
-  rentalQrLink: 'https://example.com/penyewaan'
+const __filename = fileURLToPath(import.meta.url)
+const __dirname = path.dirname(__filename)
+const dataDir = path.join(__dirname, 'data')
+
+const files = {
+  users: path.join(dataDir, 'users.json'),
+  items: path.join(dataDir, 'items.json'),
+  transactions: path.join(dataDir, 'transactions.json'),
+  borrowings: path.join(dataDir, 'borrowings.json'),
+  publicReturns: path.join(dataDir, 'publicReturns.json'),
+  publicConfig: path.join(dataDir, 'publicConfig.json')
 }
 
-let users = [
-  {
-    id: 1,
-    username: 'admin',
-    password: 'admin',
-    role: 'admin',
-    fullName: 'Administrator',
-    email: 'admin@inventory.com',
-    status: 'active',
-    joinDate: '2024-01-15'
-  }
-]
+function ensureDir(dir) {
+  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true })
+}
 
-let items = [
-  {
-    id: 1,
-    name: 'Laptop Ngawi',
-    code: 'LPT-001',
-    category: 'Elektronik',
-    stock: 5,
-    minStock: 2,
-    condition: 'Baik',
-    location: 'Gudang A',
-    price: 25000000,
-    image: 'https://images.unsplash.com/photo-1593642632823-8f785ba67e45?w=400'
-  },
-  {
-    id: 2,
-    name: 'Proyektor Amba',
-    code: 'PRJ-001',
-    category: 'Elektronik',
-    stock: 3,
-    minStock: 1,
-    condition: 'Baik',
-    location: 'Gudang B',
-    price: 8500000,
-    image: 'https://images.unsplash.com/photo-1519558260268-cde7e03a0152?w=400'
-  },
-  {
-    id: 3,
-    name: 'Kursi Kantor',
-    code: 'FRN-001',
-    category: 'Furniture',
-    stock: 20,
-    minStock: 5,
-    condition: 'Baik',
-    location: 'Gudang A',
-    price: 3500000,
-    image: 'https://images.unsplash.com/photo-1592078615290-033ee584e267?w=400'
-  },
-  {
-    id: 4,
-    name: 'Lemari Razan',
-    code: 'FRN-002',
-    category: 'Furniture',
-    stock: 5,
-    minStock: 2,
-    condition: 'Baik',
-    location: 'Gudang C',
-    price: 5200000,
-    image: 'https://images.unsplash.com/photo-1595428774223-ef52624120d2?w=400'
-  },
-  {
-    id: 5,
-    name: 'Printer',
-    code: 'PRT-001',
-    category: 'Elektronik',
-    stock: 8,
-    minStock: 3,
-    condition: 'Baik',
-    location: 'Gudang B',
-    price: 4200000,
-    image: 'https://images.unsplash.com/photo-1612815154858-60aa4c59eaa6?w=400'
-  },
-  {
-    id: 6,
-    name: 'Mouse Logitech',
-    code: 'ACC-001',
-    category: 'Aksesoris',
-    stock: 15,
-    minStock: 10,
-    condition: 'Baik',
-    location: 'Gudang A',
-    price: 350000,
-    image: 'https://images.unsplash.com/photo-1527814050087-3793815479db?w=400'
+function ensureFile(filePath, defaultValue) {
+  if (!fs.existsSync(filePath)) {
+    fs.writeFileSync(filePath, JSON.stringify(defaultValue, null, 2), 'utf-8')
   }
-]
+}
 
-let transactions = [
-  {
-    id: 1,
-    itemId: 1,
-    itemName: 'Laptop Ngawi',
-    type: 'in',
-    quantity: 5,
-    date: '2025-10-01',
-    userId: 1,
-    userName: 'Administrator',
-    notes: 'Pembelian baru dari supplier',
-    totalPrice: 125000000
-  },
-  {
-    id: 2,
-    itemId: 2,
-    itemName: 'Proyektor Amba',
-    type: 'out',
-    quantity: 1,
-    date: '2025-10-15',
-    userId: 1,
-    userName: 'Administrator',
-    notes: 'Peminjaman untuk presentasi client'
-  },
-  {
-    id: 3,
-    itemId: 3,
-    itemName: 'Kursi Kantor',
-    type: 'in',
-    quantity: 10,
-    date: '2025-10-10',
-    userId: 1,
-    userName: 'Administrator',
-    notes: 'Restok furniture',
-    totalPrice: 35000000
-  },
-  {
-    id: 4,
-    itemId: 5,
-    itemName: 'Printer',
-    type: 'out',
-    quantity: 2,
-    date: '2025-10-20',
-    userId: 1,
-    userName: 'Administrator',
-    notes: 'Distribusi ke cabang'
+function readJson(filePath, fallback = []) {
+  try {
+    return JSON.parse(fs.readFileSync(filePath, 'utf-8'))
+  } catch {
+    return fallback
   }
-]
+}
 
-let borrowings = [
-  {
-    id: 1,
-    borrowType: 'peminjaman',
-    itemId: 1,
-    itemName: 'Laptop Ngawi',
-    borrowerName: 'Sanzy',
-    borrowerEmail: 'sanzy@inventory.com',
-    borrowerPhone: '081234567890',
-    borrowerInstitution: 'Divisi IT',
-    borrowerAddress: 'Ngawi',
-    identityNumber: '3276010101010001',
-    identityPhoto: '',
-    quantity: 1,
-    status: 'borrowed',
-    notes: 'Untuk project development',
-    submittedAt: '2025-10-18',
-    approvedAt: '2025-10-20',
-    borrowDate: '2025-10-20',
-    expectedReturn: '2025-10-27',
-    returnDate: null,
-    durationDays: 7,
-    returnRequested: false,
-    returnRequestDate: null,
-    conditionOnReturn: '',
-    returnNotes: '',
-    returnPhoto: ''
-  },
-  {
-    id: 2,
-    borrowType: 'penyewaan',
-    itemId: 2,
-    itemName: 'Proyektor Amba',
-    borrowerName: 'Dina',
-    borrowerEmail: 'dina@inventory.com',
-    borrowerPhone: '081111111111',
-    borrowerInstitution: 'Humas',
-    borrowerAddress: 'Madiun',
-    identityNumber: '3276010101010002',
-    identityPhoto: '',
-    quantity: 1,
-    status: 'returned',
-    notes: 'Presentasi client XYZ',
-    submittedAt: '2025-10-12',
-    approvedAt: '2025-10-15',
-    borrowDate: '2025-10-15',
-    expectedReturn: '2025-10-20',
-    returnDate: '2025-10-20',
-    durationDays: 5,
-    returnRequested: true,
-    returnRequestDate: '2025-10-20',
-    conditionOnReturn: 'Baik',
-    returnNotes: 'Dikembalikan langsung ke petugas',
-    returnPhoto: ''
+function writeJson(filePath, data) {
+  fs.writeFileSync(filePath, JSON.stringify(data, null, 2), 'utf-8')
+}
+
+function normalizeServiceMode(value) {
+  const raw = String(value || 'both').toLowerCase().trim()
+
+  if (raw === 'pinjam') return 'borrow'
+  if (raw === 'peminjaman') return 'borrow'
+  if (raw === 'borrow') return 'borrow'
+  if (raw === 'sewa') return 'rent'
+  if (raw === 'penyewaan') return 'rent'
+  if (raw === 'rent') return 'rent'
+  if (raw === 'both') return 'both'
+  if (raw === 'keduanya') return 'both'
+
+  return 'both'
+}
+
+function normalizeBorrowType(value) {
+  const raw = String(value || 'peminjaman').toLowerCase().trim()
+
+  if (raw === 'rent') return 'penyewaan'
+  if (raw === 'sewa') return 'penyewaan'
+  if (raw === 'penyewaan') return 'penyewaan'
+  if (raw === 'borrow') return 'peminjaman'
+  if (raw === 'pinjam') return 'peminjaman'
+  if (raw === 'peminjaman') return 'peminjaman'
+
+  return 'peminjaman'
+}
+
+function initDataFiles() {
+  ensureDir(dataDir)
+
+  ensureFile(files.users, [
+    {
+      id: 1,
+      username: 'admin',
+      password: 'admin',
+      role: 'admin',
+      fullName: 'Administrator',
+      email: 'admin@inventory.com',
+      status: 'active',
+      joinDate: '2024-01-15'
+    }
+  ])
+
+  ensureFile(files.items, [
+    {
+      id: 1,
+      name: 'Laptop Ngawi',
+      code: 'LPT-001',
+      category: 'Elektronik',
+      stock: 5,
+      minStock: 2,
+      condition: 'Baik',
+      location: 'Gudang A',
+      price: 25000000,
+      image: 'https://images.unsplash.com/photo-1593642632823-8f785ba67e45?w=400',
+      serviceMode: 'both'
+    },
+    {
+      id: 2,
+      name: 'Proyektor Amba',
+      code: 'PRJ-001',
+      category: 'Elektronik',
+      stock: 3,
+      minStock: 1,
+      condition: 'Baik',
+      location: 'Gudang B',
+      price: 8500000,
+      image: 'https://images.unsplash.com/photo-1519558260268-cde7e03a0152?w=400',
+      serviceMode: 'both'
+    },
+    {
+      id: 3,
+      name: 'Kursi Kantor',
+      code: 'FRN-001',
+      category: 'Furniture',
+      stock: 20,
+      minStock: 5,
+      condition: 'Baik',
+      location: 'Gudang A',
+      price: 3500000,
+      image: 'https://images.unsplash.com/photo-1592078615290-033ee584e267?w=400',
+      serviceMode: 'borrow'
+    },
+    {
+      id: 4,
+      name: 'Lemari Razan',
+      code: 'FRN-002',
+      category: 'Furniture',
+      stock: 5,
+      minStock: 2,
+      condition: 'Baik',
+      location: 'Gudang C',
+      price: 5200000,
+      image: 'https://images.unsplash.com/photo-1595428774223-ef52624120d2?w=400',
+      serviceMode: 'borrow'
+    },
+    {
+      id: 5,
+      name: 'Printer',
+      code: 'PRT-001',
+      category: 'Elektronik',
+      stock: 8,
+      minStock: 3,
+      condition: 'Baik',
+      location: 'Gudang B',
+      price: 4200000,
+      image: 'https://images.unsplash.com/photo-1612815154858-60aa4c59eaa6?w=400',
+      serviceMode: 'rent'
+    },
+    {
+      id: 6,
+      name: 'Mouse Logitech',
+      code: 'ACC-001',
+      category: 'Aksesoris',
+      stock: 15,
+      minStock: 10,
+      condition: 'Baik',
+      location: 'Gudang A',
+      price: 350000,
+      image: 'https://images.unsplash.com/photo-1527814050087-3793815479db?w=400',
+      serviceMode: 'both'
+    }
+  ])
+
+  ensureFile(files.transactions, [
+    {
+      id: 1,
+      itemId: 1,
+      itemName: 'Laptop Ngawi',
+      type: 'in',
+      quantity: 5,
+      date: '2025-10-01',
+      userId: 1,
+      userName: 'Administrator',
+      notes: 'Pembelian baru dari supplier',
+      totalPrice: 125000000
+    }
+  ])
+
+  ensureFile(files.borrowings, [])
+  ensureFile(files.publicReturns, [])
+  ensureFile(files.publicConfig, {
+    rentalQrisLink: 'https://example.com/qris',
+    rentalQrisImage: '',
+    adminWhatsappNumber: '',
+    whatsappApiUrl: '',
+    whatsappApiToken: '',
+    whatsappMessageTemplate:
+      'Halo Admin, ada pengajuan penyewaan baru atas nama {{name}} untuk barang {{itemName}} sejumlah {{quantity}} unit. Bukti pembayaran sudah diupload.'
+  })
+}
+
+initDataFiles()
+
+function getUsers() {
+  return readJson(files.users, [])
+}
+function saveUsers(data) {
+  writeJson(files.users, data)
+}
+
+function getItems() {
+  const rows = readJson(files.items, [])
+  return rows.map(item => ({
+    ...item,
+    serviceMode: normalizeServiceMode(item.serviceMode || item.availableFor || item.type || 'both')
+  }))
+}
+function saveItems(data) {
+  const normalized = (data || []).map(item => ({
+    ...item,
+    serviceMode: normalizeServiceMode(item.serviceMode || item.availableFor || item.type || 'both')
+  }))
+  writeJson(files.items, normalized)
+}
+
+function getTransactions() {
+  return readJson(files.transactions, [])
+}
+function saveTransactions(data) {
+  writeJson(files.transactions, data)
+}
+
+function getBorrowings() {
+  const rows = readJson(files.borrowings, [])
+  return rows.map(row => ({
+    ...row,
+    borrowType: normalizeBorrowType(row.borrowType || 'peminjaman'),
+    returnRequestStatus: row.returnRequestStatus || (row.status === 'return_requested' ? 'pending' : null),
+    returnRequestedAt: row.returnRequestedAt || null,
+    returnVerifiedAt: row.returnVerifiedAt || null,
+    returnVerifiedBy: row.returnVerifiedBy || null,
+    paymentProof: row.paymentProof || '',
+    paymentProofName: row.paymentProofName || '',
+    paymentStatus: row.paymentStatus || (normalizeBorrowType(row.borrowType) === 'penyewaan' ? 'pending_verification' : null),
+    whatsappStatus: row.whatsappStatus || null,
+    whatsappResponse: row.whatsappResponse || null
+  }))
+}
+function saveBorrowings(data) {
+  writeJson(files.borrowings, data)
+}
+
+function getPublicReturns() {
+  return readJson(files.publicReturns, [])
+}
+function savePublicReturns(data) {
+  writeJson(files.publicReturns, data)
+}
+
+function getPublicConfig() {
+  const cfg = readJson(files.publicConfig, {
+    rentalQrisLink: '',
+    rentalQrisImage: '',
+    adminWhatsappNumber: '',
+    whatsappApiUrl: '',
+    whatsappApiToken: '',
+    whatsappMessageTemplate: ''
+  })
+
+  return {
+    rentalQrisLink: cfg.rentalQrisLink || cfg.rentalQrLink || '',
+    rentalQrisImage: cfg.rentalQrisImage || '',
+    adminWhatsappNumber: cfg.adminWhatsappNumber || '',
+    whatsappApiUrl: cfg.whatsappApiUrl || '',
+    whatsappApiToken: cfg.whatsappApiToken || '',
+    whatsappMessageTemplate:
+      cfg.whatsappMessageTemplate ||
+      'Halo Admin, ada pengajuan penyewaan baru atas nama {{name}} untuk barang {{itemName}} sejumlah {{quantity}} unit. Bukti pembayaran sudah diupload.'
   }
-]
-
-let publicReturns = []
+}
+function savePublicConfig(data) {
+  writeJson(files.publicConfig, data)
+}
 
 function nextId(list) {
-  return list.length ? Math.max(...list.map(x => x.id)) + 1 : 1
+  return list.length ? Math.max(...list.map(x => Number(x.id) || 0)) + 1 : 1
 }
 
 function todayISO() {
   return new Date().toISOString().slice(0, 10)
+}
+
+function nowISODateTime() {
+  return new Date().toISOString()
 }
 
 function diffDays(startDate, endDate) {
@@ -261,8 +339,99 @@ function isAdmin(req, res, next) {
   next()
 }
 
+function isItemAllowedForType(item, borrowType) {
+  const mode = normalizeServiceMode(item?.serviceMode || 'both')
+  const type = normalizeBorrowType(borrowType)
+
+  if (mode === 'both') return true
+  if (mode === 'borrow' && type === 'peminjaman') return true
+  if (mode === 'rent' && type === 'penyewaan') return true
+
+  return false
+}
+
+function fillTemplate(template, payload) {
+  let text = String(template || '')
+  Object.keys(payload || {}).forEach(key => {
+    const val = payload[key] == null ? '' : String(payload[key])
+    text = text.replaceAll(`{{${key}}}`, val)
+  })
+  return text
+}
+
+async function sendWhatsappNotification({ config, borrowing }) {
+  const apiUrl = String(config?.whatsappApiUrl || '').trim()
+  const apiToken = String(config?.whatsappApiToken || '').trim()
+  const adminWhatsappNumber = String(config?.adminWhatsappNumber || '').trim()
+
+  if (!apiUrl || !adminWhatsappNumber) {
+    return {
+      success: false,
+      skipped: true,
+      message: 'WhatsApp API belum dikonfigurasi lengkap'
+    }
+  }
+
+  const message = fillTemplate(config?.whatsappMessageTemplate, {
+    name: borrowing.borrowerName || '-',
+    itemName: borrowing.itemName || '-',
+    quantity: borrowing.quantity || 0,
+    type: borrowing.borrowType || '-',
+    expectedReturn: borrowing.expectedReturn || '-'
+  })
+
+  try {
+    const headers = {
+      'Content-Type': 'application/json'
+    }
+
+    if (apiToken) {
+      headers.Authorization = `Bearer ${apiToken}`
+    }
+
+    const response = await fetch(apiUrl, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({
+        to: adminWhatsappNumber,
+        phone: adminWhatsappNumber,
+        number: adminWhatsappNumber,
+        message,
+        text: message,
+        caption: message,
+        borrowerName: borrowing.borrowerName,
+        itemName: borrowing.itemName,
+        quantity: borrowing.quantity,
+        paymentProof: borrowing.paymentProof || '',
+        paymentProofName: borrowing.paymentProofName || ''
+      })
+    })
+
+    let body = null
+    try {
+      body = await response.json()
+    } catch {
+      body = null
+    }
+
+    return {
+      success: response.ok,
+      skipped: false,
+      status: response.status,
+      body
+    }
+  } catch (error) {
+    return {
+      success: false,
+      skipped: false,
+      message: error?.message || 'Gagal menghubungi WhatsApp API'
+    }
+  }
+}
+
 app.post('/api/auth/login', (req, res) => {
   const { username, password } = req.body
+  const users = getUsers()
   const user = users.find(u => u.username === username && u.password === password)
 
   if (!user) {
@@ -289,134 +458,190 @@ app.post('/api/auth/login', (req, res) => {
 
 app.post('/api/auth/change-password', auth, isAdmin, (req, res) => {
   const { currentPassword, newPassword } = req.body
+  const users = getUsers()
 
   if (!currentPassword || !newPassword) {
     return res.status(400).json({ success: false, message: 'Invalid payload' })
   }
 
-  const uIndex = users.findIndex(u => u.id === req.user.id)
+  const userIndex = users.findIndex(u => u.id === req.user.id)
 
-  if (uIndex === -1) {
+  if (userIndex === -1) {
     return res.status(404).json({ success: false, message: 'User not found' })
   }
 
-  if (users[uIndex].password !== currentPassword) {
+  if (users[userIndex].password !== currentPassword) {
     return res.status(400).json({ success: false, message: 'Password saat ini salah' })
   }
 
-  users[uIndex].password = newPassword
+  users[userIndex].password = newPassword
+  saveUsers(users)
+
   return res.json({ success: true })
 })
 
 app.get('/api/public-config', (_req, res) => {
-  res.json(publicConfig)
+  res.json(getPublicConfig())
+})
+
+app.put('/api/public-config/qris', auth, isAdmin, (req, res) => {
+  const current = getPublicConfig()
+  const {
+    rentalQrisLink,
+    rentalQrisImage,
+    adminWhatsappNumber,
+    whatsappApiUrl,
+    whatsappApiToken,
+    whatsappMessageTemplate
+  } = req.body
+
+  const updated = {
+    ...current,
+    rentalQrisLink: rentalQrisLink ?? current.rentalQrisLink ?? '',
+    rentalQrisImage: rentalQrisImage ?? current.rentalQrisImage ?? '',
+    adminWhatsappNumber: adminWhatsappNumber ?? current.adminWhatsappNumber ?? '',
+    whatsappApiUrl: whatsappApiUrl ?? current.whatsappApiUrl ?? '',
+    whatsappApiToken: whatsappApiToken ?? current.whatsappApiToken ?? '',
+    whatsappMessageTemplate:
+      whatsappMessageTemplate ?? current.whatsappMessageTemplate ?? ''
+  }
+
+  savePublicConfig(updated)
+  res.json(updated)
 })
 
 app.put('/api/public-config/rental-qr', auth, isAdmin, (req, res) => {
-  const { rentalQrLink } = req.body
-  publicConfig.rentalQrLink = rentalQrLink || ''
-  res.json(publicConfig)
+  const current = getPublicConfig()
+  const { rentalQrLink, rentalQrisLink } = req.body
+
+  const updated = {
+    ...current,
+    rentalQrisLink: rentalQrisLink || rentalQrLink || current.rentalQrisLink || ''
+  }
+
+  savePublicConfig(updated)
+  res.json(updated)
 })
 
 app.get('/api/items', (_req, res) => {
-  res.json(items)
+  res.json(getItems())
 })
 
 app.post('/api/items', auth, isAdmin, (req, res) => {
-  const id = nextId(items)
+  const items = getItems()
+
   const item = {
-    id,
+    id: nextId(items),
     ...req.body,
     stock: Number(req.body.stock || 0),
-    minStock: Number(req.body.minStock || 0)
+    minStock: Number(req.body.minStock || 0),
+    price: Number(req.body.price || 0),
+    serviceMode: normalizeServiceMode(req.body.serviceMode || 'both')
   }
 
   items.push(item)
+  saveItems(items)
   res.json(item)
 })
 
 app.put('/api/items/:id', auth, isAdmin, (req, res) => {
-  const id = +req.params.id
+  const id = Number(req.params.id)
+  const items = getItems()
 
-  items = items.map(i =>
-    i.id === id
-      ? {
-          ...i,
-          ...req.body,
-          stock: Number(req.body.stock ?? i.stock ?? 0),
-          minStock: Number(req.body.minStock ?? i.minStock ?? 0)
-        }
-      : i
-  )
+  const idx = items.findIndex(i => i.id === id)
+  if (idx === -1) return res.status(404).json({ error: 'Item not found' })
 
-  res.json(items.find(i => i.id === id))
+  items[idx] = {
+    ...items[idx],
+    ...req.body,
+    stock: Number(req.body.stock ?? items[idx].stock ?? 0),
+    minStock: Number(req.body.minStock ?? items[idx].minStock ?? 0),
+    price: Number(req.body.price ?? items[idx].price ?? 0),
+    serviceMode: normalizeServiceMode(req.body.serviceMode ?? items[idx].serviceMode ?? 'both')
+  }
+
+  saveItems(items)
+  res.json(items[idx])
 })
 
 app.delete('/api/items/:id', auth, isAdmin, (req, res) => {
-  const id = +req.params.id
-  items = items.filter(i => i.id !== id)
+  const id = Number(req.params.id)
+  const items = getItems().filter(i => i.id !== id)
+  saveItems(items)
   res.json({ ok: true })
 })
 
 app.get('/api/transactions', auth, isAdmin, (_req, res) => {
-  res.json(transactions)
+  res.json(getTransactions())
 })
 
 app.post('/api/transactions/in', auth, isAdmin, (req, res) => {
   const { itemId, quantity, notes, totalPrice } = req.body
-  const item = items.find(i => i.id === +itemId)
+  const items = getItems()
+  const transactions = getTransactions()
 
+  const item = items.find(i => i.id === Number(itemId))
   if (!item) return res.status(404).json({ error: 'Item not found' })
 
-  item.stock += +quantity
+  item.stock += Number(quantity)
 
   const trans = {
     id: nextId(transactions),
-    itemId: +itemId,
+    itemId: Number(itemId),
     itemName: item.name,
     type: 'in',
-    quantity: +quantity,
+    quantity: Number(quantity),
     date: todayISO(),
     userId: req.user.id,
     userName: req.user.fullName,
-    notes,
-    totalPrice: totalPrice || 0
+    notes: notes || '',
+    totalPrice: Number(totalPrice || 0)
   }
 
-  transactions = [trans, ...transactions]
+  transactions.unshift(trans)
+  saveItems(items)
+  saveTransactions(transactions)
+
   res.json(trans)
 })
 
 app.post('/api/transactions/out', auth, isAdmin, (req, res) => {
   const { itemId, quantity, notes } = req.body
-  const item = items.find(i => i.id === +itemId)
+  const items = getItems()
+  const transactions = getTransactions()
 
+  const item = items.find(i => i.id === Number(itemId))
   if (!item) return res.status(404).json({ error: 'Item not found' })
-  if (item.stock < +quantity) return res.status(400).json({ error: 'Stok tidak cukup' })
+  if (item.stock < Number(quantity)) {
+    return res.status(400).json({ error: 'Stok tidak cukup' })
+  }
 
-  item.stock -= +quantity
+  item.stock -= Number(quantity)
 
   const trans = {
     id: nextId(transactions),
-    itemId: +itemId,
+    itemId: Number(itemId),
     itemName: item.name,
     type: 'out',
-    quantity: +quantity,
+    quantity: Number(quantity),
     date: todayISO(),
     userId: req.user.id,
     userName: req.user.fullName,
-    notes
+    notes: notes || ''
   }
 
-  transactions = [trans, ...transactions]
+  transactions.unshift(trans)
+  saveItems(items)
+  saveTransactions(transactions)
+
   res.json(trans)
 })
 
 app.get('/api/borrowings', (_req, res) => {
-  res.json(borrowings)
+  res.json(getBorrowings())
 })
 
-app.post('/api/borrowings', (req, res) => {
+app.post('/api/borrowings', async (req, res) => {
   const {
     borrowType,
     itemId,
@@ -424,44 +649,52 @@ app.post('/api/borrowings', (req, res) => {
     expectedReturn,
     notes,
     borrowerName,
-    borrowerEmail,
     borrowerPhone,
-    borrowerInstitution,
     borrowerAddress,
-    identityNumber,
-    identityPhoto
+    paymentProof,
+    paymentProofName
   } = req.body
 
-  const item = items.find(i => i.id === +itemId)
+  const items = getItems()
+  const borrowings = getBorrowings()
+  const config = getPublicConfig()
+
+  const normalizedBorrowType = normalizeBorrowType(borrowType || 'peminjaman')
+  const item = items.find(i => i.id === Number(itemId))
 
   if (!item) return res.status(404).json({ error: 'Item tidak ditemukan' })
 
-  if (!borrowerName || !borrowerPhone || !borrowerInstitution || !identityNumber) {
+  if (!isItemAllowedForType(item, normalizedBorrowType)) {
     return res.status(400).json({
-      error: 'Nama, no HP, instansi, dan no identitas wajib diisi'
+      error: normalizedBorrowType === 'penyewaan'
+        ? 'Barang ini tidak tersedia untuk penyewaan'
+        : 'Barang ini tidak tersedia untuk peminjaman'
     })
   }
 
-  if (!identityPhoto) {
-    return res.status(400).json({ error: 'Foto kartu identitas wajib diupload' })
+  if (!borrowerName || !borrowerPhone) {
+    return res.status(400).json({
+      error: 'Nama dan no HP wajib diisi'
+    })
+  }
+
+  if (normalizedBorrowType === 'penyewaan' && !paymentProof) {
+    return res.status(400).json({
+      error: 'Bukti pembayaran wajib diupload untuk penyewaan'
+    })
   }
 
   const submittedAt = todayISO()
-  const durationDays = diffDays(submittedAt, expectedReturn)
 
-  const b = {
+  const borrowing = {
     id: nextId(borrowings),
-    borrowType: borrowType || 'peminjaman',
-    itemId: +itemId,
+    borrowType: normalizedBorrowType,
+    itemId: Number(itemId),
     itemName: item.name,
     borrowerName,
-    borrowerEmail: borrowerEmail || '',
     borrowerPhone,
-    borrowerInstitution,
     borrowerAddress: borrowerAddress || '',
-    identityNumber,
-    identityPhoto,
-    quantity: +quantity || 1,
+    quantity: Number(quantity || 1),
     status: 'pending',
     notes: notes || '',
     submittedAt,
@@ -469,20 +702,265 @@ app.post('/api/borrowings', (req, res) => {
     borrowDate: null,
     expectedReturn: expectedReturn || '',
     returnDate: null,
-    durationDays,
-    returnRequested: false,
-    returnRequestDate: null,
+    durationDays: diffDays(submittedAt, expectedReturn),
+    linkedReturnId: null,
+    returnRequestStatus: null,
+    returnRequestedAt: null,
+    returnVerifiedAt: null,
+    returnVerifiedBy: null,
+    returnPhoto: '',
     conditionOnReturn: '',
     returnNotes: '',
-    returnPhoto: ''
+    paymentProof: paymentProof || '',
+    paymentProofName: paymentProofName || '',
+    paymentStatus: normalizedBorrowType === 'penyewaan' ? 'pending_verification' : null,
+    whatsappStatus: null,
+    whatsappResponse: null,
+    createdAt: nowISODateTime(),
+    updatedAt: nowISODateTime()
   }
 
-  borrowings = [b, ...borrowings]
-  res.json(b)
+  if (normalizedBorrowType === 'penyewaan') {
+    const waResult = await sendWhatsappNotification({
+      config,
+      borrowing
+    })
+
+    borrowing.whatsappStatus = waResult.success
+      ? 'sent'
+      : waResult.skipped
+      ? 'skipped'
+      : 'failed'
+
+    borrowing.whatsappResponse = waResult
+  }
+
+  borrowings.unshift(borrowing)
+  saveBorrowings(borrowings)
+
+  res.json(borrowing)
+})
+
+app.patch('/api/borrowings/:id/approve', auth, isAdmin, (req, res) => {
+  const id = Number(req.params.id)
+  const borrowings = getBorrowings()
+  const items = getItems()
+  const transactions = getTransactions()
+
+  const borrowing = borrowings.find(x => x.id === id)
+  if (!borrowing) return res.status(404).json({ error: 'Not found' })
+  if (borrowing.status !== 'pending') {
+    return res.status(400).json({ error: 'Status tidak valid' })
+  }
+
+  const item = items.find(i => i.id === borrowing.itemId)
+  if (!item) return res.status(404).json({ error: 'Item not found' })
+
+  if (!isItemAllowedForType(item, borrowing.borrowType)) {
+    return res.status(400).json({ error: 'Jenis layanan barang tidak sesuai' })
+  }
+
+  if (item.stock < Number(borrowing.quantity)) {
+    return res.status(400).json({ error: 'Stok tidak cukup' })
+  }
+
+  item.stock -= Number(borrowing.quantity)
+  borrowing.status = 'borrowed'
+  borrowing.approvedAt = todayISO()
+  borrowing.borrowDate = todayISO()
+  borrowing.updatedAt = nowISODateTime()
+
+  const trans = {
+    id: nextId(transactions),
+    itemId: borrowing.itemId,
+    itemName: borrowing.itemName,
+    type: 'out',
+    quantity: Number(borrowing.quantity),
+    date: todayISO(),
+    userId: req.user.id,
+    userName: req.user.fullName,
+    notes: `${borrowing.borrowType === 'penyewaan' ? 'Penyewaan' : 'Peminjaman'} disetujui`
+  }
+
+  transactions.unshift(trans)
+
+  saveItems(items)
+  saveBorrowings(borrowings)
+  saveTransactions(transactions)
+
+  res.json(borrowing)
+})
+
+app.patch('/api/borrowings/:id/reject', auth, isAdmin, (req, res) => {
+  const id = Number(req.params.id)
+  const borrowings = getBorrowings()
+
+  const borrowing = borrowings.find(x => x.id === id)
+  if (!borrowing) return res.status(404).json({ error: 'Not found' })
+  if (borrowing.status !== 'pending') {
+    return res.status(400).json({ error: 'Status tidak valid' })
+  }
+
+  borrowing.status = 'rejected'
+  borrowing.updatedAt = nowISODateTime()
+  saveBorrowings(borrowings)
+
+  res.json(borrowing)
+})
+
+app.post('/api/borrowings/:id/request-return', (req, res) => {
+  const id = Number(req.params.id)
+  const {
+    returnerName,
+    returnerPhone,
+    conditionOnReturn,
+    returnNotes,
+    returnPhoto
+  } = req.body
+
+  const borrowings = getBorrowings()
+  const publicReturns = getPublicReturns()
+
+  const borrowing = borrowings.find(x => x.id === id)
+  if (!borrowing) return res.status(404).json({ error: 'Data peminjaman tidak ditemukan' })
+  if (borrowing.status !== 'borrowed') {
+    return res.status(400).json({ error: 'Hanya data yang sedang dipinjam yang bisa diajukan pengembalian' })
+  }
+
+  if (!returnerName || !returnerPhone || !returnPhoto) {
+    return res.status(400).json({ error: 'Nama, no HP, dan foto pengembalian wajib diisi' })
+  }
+
+  const row = {
+    id: nextId(publicReturns),
+    type: 'return-request',
+    borrowingId: borrowing.id,
+    itemId: borrowing.itemId,
+    itemName: borrowing.itemName,
+    borrowType: borrowing.borrowType,
+    returnerName,
+    returnerPhone,
+    conditionOnReturn: conditionOnReturn || 'Baik',
+    returnNotes: returnNotes || '',
+    returnPhoto,
+    submittedAt: todayISO(),
+    status: 'pending_verification',
+    verifiedAt: null,
+    verifiedBy: null,
+    createdAt: nowISODateTime(),
+    updatedAt: nowISODateTime()
+  }
+
+  borrowing.linkedReturnId = row.id
+  borrowing.returnRequestStatus = 'pending'
+  borrowing.returnRequestedAt = todayISO()
+  borrowing.returnPhoto = returnPhoto
+  borrowing.conditionOnReturn = conditionOnReturn || 'Baik'
+  borrowing.returnNotes = returnNotes || ''
+  borrowing.updatedAt = nowISODateTime()
+
+  publicReturns.unshift(row)
+
+  savePublicReturns(publicReturns)
+  saveBorrowings(borrowings)
+
+  res.json({
+    success: true,
+    message: 'Permintaan pengembalian berhasil dikirim dan menunggu verifikasi admin',
+    borrowing,
+    returnRow: row
+  })
+})
+
+app.post('/api/borrowings/:id/verify-return', auth, isAdmin, (req, res) => {
+  const id = Number(req.params.id)
+  const borrowings = getBorrowings()
+  const items = getItems()
+  const transactions = getTransactions()
+  const publicReturns = getPublicReturns()
+
+  const borrowing = borrowings.find(x => x.id === id)
+  if (!borrowing) return res.status(404).json({ error: 'Not found' })
+  if (borrowing.status !== 'borrowed') {
+    return res.status(400).json({ error: 'Status tidak valid untuk verifikasi pengembalian' })
+  }
+  if (borrowing.returnRequestStatus !== 'pending') {
+    return res.status(400).json({ error: 'Belum ada form pengembalian yang diajukan' })
+  }
+
+  const item = items.find(i => i.id === borrowing.itemId)
+  if (!item) return res.status(404).json({ error: 'Item not found' })
+
+  borrowing.status = 'returned'
+  borrowing.returnDate = todayISO()
+  borrowing.returnRequestStatus = 'verified'
+  borrowing.returnVerifiedAt = todayISO()
+  borrowing.returnVerifiedBy = req.user.fullName
+  borrowing.updatedAt = nowISODateTime()
+
+  item.stock += Number(borrowing.quantity)
+
+  if (borrowing.linkedReturnId) {
+    const linked = publicReturns.find(r => r.id === borrowing.linkedReturnId)
+    if (linked) {
+      linked.status = 'verified'
+      linked.verifiedAt = todayISO()
+      linked.verifiedBy = req.user.fullName
+      linked.updatedAt = nowISODateTime()
+    }
+  }
+
+  const trans = {
+    id: nextId(transactions),
+    itemId: borrowing.itemId,
+    itemName: borrowing.itemName,
+    type: 'in',
+    quantity: Number(borrowing.quantity),
+    date: todayISO(),
+    userId: req.user.id,
+    userName: req.user.fullName,
+    notes:
+      borrowing.borrowType === 'penyewaan'
+        ? 'Pengembalian penyewaan diverifikasi admin'
+        : 'Pengembalian peminjaman diverifikasi admin'
+  }
+
+  transactions.unshift(trans)
+
+  saveItems(items)
+  saveBorrowings(borrowings)
+  saveTransactions(transactions)
+  savePublicReturns(publicReturns)
+
+  res.json({
+    success: true,
+    message: 'Pengembalian berhasil diverifikasi',
+    borrowing,
+    transaction: trans
+  })
+})
+
+app.post('/api/borrowings/:id/return', auth, isAdmin, (req, res) => {
+  const id = Number(req.params.id)
+  const borrowings = getBorrowings()
+  const borrowing = borrowings.find(x => x.id === id)
+
+  if (!borrowing) return res.status(404).json({ error: 'Not found' })
+
+  if (borrowing.returnRequestStatus !== 'pending') {
+    return res.status(400).json({
+      error: 'Pengembalian harus melalui form terlebih dahulu sebelum diverifikasi admin'
+    })
+  }
+
+  return res.status(400).json({
+    error: 'Gunakan endpoint verifikasi pengembalian, bukan konfirmasi langsung'
+  })
 })
 
 app.get('/api/returns-public', auth, isAdmin, (_req, res) => {
-  res.json(publicReturns)
+  const rows = getPublicReturns()
+  res.json(rows)
 })
 
 app.post('/api/returns-public', (req, res) => {
@@ -495,102 +973,57 @@ app.post('/api/returns-public', (req, res) => {
     returnPhoto
   } = req.body
 
-  const item = items.find(i => i.id === +itemId)
-  if (!item) return res.status(404).json({ error: 'Barang tidak ditemukan' })
+  const borrowings = getBorrowings()
+  const itemBorrowings = borrowings.filter(
+    b => b.itemId === Number(itemId) && b.status === 'borrowed'
+  )
 
-  if (!returnerName || !returnerPhone || !returnPhoto) {
-    return res.status(400).json({ error: 'Nama, no HP, dan foto barang wajib diisi' })
+  if (!itemBorrowings.length) {
+    return res.status(400).json({
+      error: 'Barang ini tidak sedang tercatat dalam status dipinjam'
+    })
   }
 
-  const row = {
-    id: nextId(publicReturns),
-    type: 'public-return',
-    itemId: item.id,
-    itemName: item.name,
+  const latestBorrowing = itemBorrowings[0]
+
+  req.body = {
+    borrowingId: latestBorrowing.id,
     returnerName,
     returnerPhone,
-    conditionOnReturn: conditionOnReturn || 'Baik',
-    returnNotes: returnNotes || '',
-    returnPhoto,
-    submittedAt: todayISO()
+    conditionOnReturn,
+    returnNotes,
+    returnPhoto
   }
 
-  publicReturns = [row, ...publicReturns]
-  res.json(row)
-})
-
-app.patch('/api/borrowings/:id/approve', auth, isAdmin, (req, res) => {
-  const id = +req.params.id
-  const b = borrowings.find(x => x.id === id)
-
-  if (!b) return res.status(404).json({ error: 'Not found' })
-  if (b.status !== 'pending') return res.status(400).json({ error: 'Status tidak valid' })
-
-  const item = items.find(i => i.id === b.itemId)
-  if (!item) return res.status(404).json({ error: 'Item not found' })
-  if (item.stock < b.quantity) return res.status(400).json({ error: 'Stok tidak cukup' })
-
-  item.stock -= b.quantity
-  b.status = 'borrowed'
-  b.approvedAt = todayISO()
-  b.borrowDate = todayISO()
-
-  const trans = {
-    id: nextId(transactions),
-    itemId: b.itemId,
-    itemName: b.itemName,
-    type: 'out',
-    quantity: b.quantity,
-    date: b.borrowDate,
-    userId: req.user.id,
-    userName: req.user.fullName,
-    notes: `${b.borrowType === 'penyewaan' ? 'Penyewaan' : 'Peminjaman'} disetujui`
+  const fakeReq = {
+    ...req,
+    params: {
+      id: String(latestBorrowing.id)
+    }
   }
 
-  transactions = [trans, ...transactions]
-  res.json(b)
+  return app._router.handle(fakeReq, res, () => {})
 })
 
-app.patch('/api/borrowings/:id/reject', auth, isAdmin, (req, res) => {
-  const id = +req.params.id
-  const b = borrowings.find(x => x.id === id)
+app.post('/api/returns-public/:id/verify', auth, isAdmin, (req, res) => {
+  const id = Number(req.params.id)
+  const publicReturns = getPublicReturns()
+  const row = publicReturns.find(r => r.id === id)
 
-  if (!b) return res.status(404).json({ error: 'Not found' })
-  if (b.status !== 'pending') return res.status(400).json({ error: 'Status tidak valid' })
+  if (!row) return res.status(404).json({ error: 'Data return tidak ditemukan' })
 
-  b.status = 'rejected'
-  res.json(b)
-})
-
-app.post('/api/borrowings/:id/return', auth, isAdmin, (req, res) => {
-  const id = +req.params.id
-  const b = borrowings.find(x => x.id === id)
-
-  if (!b) return res.status(404).json({ error: 'Not found' })
-  if (b.status !== 'borrowed') return res.status(400).json({ error: 'Status tidak valid' })
-
-  b.status = 'returned'
-  b.returnDate = todayISO()
-
-  const item = items.find(i => i.id === b.itemId)
-  if (item) item.stock += b.quantity
-
-  const trans = {
-    id: nextId(transactions),
-    itemId: b.itemId,
-    itemName: b.itemName,
-    type: 'in',
-    quantity: b.quantity,
-    date: b.returnDate,
-    userId: req.user.id,
-    userName: req.user.fullName,
-    notes: 'Barang dikembalikan'
+  const fakeReq = {
+    ...req,
+    params: {
+      id: String(row.borrowingId)
+    }
   }
 
-  transactions = [trans, ...transactions]
-  res.json(b)
+  return app._router.handle(fakeReq, res, () => {})
 })
 
 app.get('/', (_req, res) => res.send('Inventory API OK'))
 
-app.listen(PORT, () => console.log(`Server running on http://localhost:${PORT}`))
+app.listen(PORT, () => {
+  console.log(`Server running on http://localhost:${PORT}`)
+})

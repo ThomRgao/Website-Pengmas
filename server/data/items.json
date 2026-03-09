@@ -1,0 +1,93 @@
+[
+  {
+    "id": 1,
+    "name": "Laptop Ngawi",
+    "code": "LPT-001",
+    "category": "Elektronik",
+    "stock": 4,
+    "minStock": 2,
+    "condition": "Baik",
+    "location": "Gudang A",
+    "price": 25000000,
+    "image": "https://images.unsplash.com/photo-1593642632823-8f785ba67e45?w=400",
+    "serviceMode": "both"
+  },
+  {
+    "id": 2,
+    "name": "Proyektor Amba",
+    "code": "PRJ-001",
+    "category": "Elektronik",
+    "stock": 2,
+    "minStock": 1,
+    "condition": "Baik",
+    "location": "Gudang B",
+    "price": 8500000,
+    "image": "https://images.unsplash.com/photo-1519558260268-cde7e03a0152?w=400",
+    "serviceMode": "both"
+  },
+  {
+    "id": 3,
+    "name": "Kursi Kantor",
+    "code": "FRN-001",
+    "category": "Furniture",
+    "stock": 20,
+    "minStock": 5,
+    "condition": "Baik",
+    "location": "Gudang A",
+    "price": 3500000,
+    "image": "https://images.unsplash.com/photo-1592078615290-033ee584e267?w=400",
+    "serviceMode": "both"
+  },
+  {
+    "id": 4,
+    "name": "Lemari Razan",
+    "code": "FRN-002",
+    "category": "Furniture",
+    "stock": 5,
+    "minStock": 2,
+    "condition": "Baik",
+    "location": "Gudang C",
+    "price": 5200000,
+    "image": "https://images.unsplash.com/photo-1595428774223-ef52624120d2?w=400",
+    "serviceMode": "both"
+  },
+  {
+    "id": 5,
+    "name": "Printer",
+    "code": "PRT-001",
+    "category": "Elektronik",
+    "stock": 7,
+    "minStock": 3,
+    "condition": "Baik",
+    "location": "Gudang B",
+    "price": 4200000,
+    "image": "https://images.unsplash.com/photo-1612815154858-60aa4c59eaa6?w=400",
+    "serviceMode": "both"
+  },
+  {
+    "id": 6,
+    "name": "Mouse Logitech",
+    "code": "ACC-001",
+    "category": "Aksesoris",
+    "stock": 15,
+    "minStock": 10,
+    "condition": "Baik",
+    "location": "Gudang A",
+    "price": 350000,
+    "image": "https://images.unsplash.com/photo-1527814050087-3793815479db?w=400",
+    "serviceMode": "both"
+  },
+  {
+    "id": 7,
+    "name": "Kursi",
+    "code": "KRS-01",
+    "category": "furniture",
+    "location": "Gedung A",
+    "condition": "Baik",
+    "stock": 49,
+    "minStock": 1,
+    "price": 150000,
+    "image": "https://www.kantorku.co.id/cdn/shop/files/GA_28_U7_ERGOTEC_2004GA28U7EGTCOSCRXXXBLCK_DSC_9019_23_PKP.jpg?v=1757418917",
+    "serviceMode": "rent"
+  }
+]

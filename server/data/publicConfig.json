@@ -1,0 +1,8 @@
+{
+  "rentalQrisLink": "",
+  "rentalQrisImage": "",
+  "adminWhatsappNumber": "6282288277920",
+  "whatsappApiUrl": "https://wa.me/6282288277920",
+  "whatsappApiToken": "",
+  "whatsappMessageTemplate": "Halo Admin, ada pengajuan penyewaan baru atas nama {{name}} untuk barang {{itemName}} sejumlah {{quantity}} unit. Bukti pembayaran sudah diupload."
+}

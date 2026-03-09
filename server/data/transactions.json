@@ -1,0 +1,102 @@
+[
+  {
+    "id": 9,
+    "itemId": 7,
+    "itemName": "Kursi",
+    "type": "out",
+    "quantity": 1,
+    "date": "2026-03-09",
+    "userId": 1,
+    "userName": "Administrator",
+    "notes": "Penyewaan disetujui"
+  },
+  {
+    "id": 8,
+    "itemId": 1,
+    "itemName": "Laptop Ngawi",
+    "type": "out",
+    "quantity": 1,
+    "date": "2026-03-09",
+    "userId": 1,
+    "userName": "Administrator",
+    "notes": "Peminjaman disetujui"
+  },
+  {
+    "id": 7,
+    "itemId": 5,
+    "itemName": "Printer",
+    "type": "out",
+    "quantity": 1,
+    "date": "2026-03-09",
+    "userId": 1,
+    "userName": "Administrator",
+    "notes": "Peminjaman disetujui"
+  },
+  {
+    "id": 6,
+    "itemId": 1,
+    "itemName": "Laptop Ngawi",
+    "type": "in",
+    "quantity": 1,
+    "date": "2026-03-08",
+    "userId": 1,
+    "userName": "Administrator",
+    "notes": "Pengembalian diverifikasi admin"
+  },
+  {
+    "id": 5,
+    "itemId": 1,
+    "itemName": "Laptop Ngawi",
+    "type": "out",
+    "quantity": 1,
+    "date": "2026-03-08",
+    "userId": 1,
+    "userName": "Administrator",
+    "notes": "Peminjaman disetujui"
+  },
+  {
+    "id": 4,
+    "itemId": 3,
+    "itemName": "Kursi Kantor",
+    "type": "in",
+    "quantity": 1,
+    "date": "2026-03-08",
+    "userId": 1,
+    "userName": "Administrator",
+    "notes": "Barang dikembalikan"
+  },
+  {
+    "id": 3,
+    "itemId": 3,
+    "itemName": "Kursi Kantor",
+    "type": "out",
+    "quantity": 1,
+    "date": "2026-03-08",
+    "userId": 1,
+    "userName": "Administrator",
+    "notes": "Peminjaman disetujui"
+  },
+  {
+    "id": 2,
+    "itemId": 2,
+    "itemName": "Proyektor Amba",
+    "type": "out",
+    "quantity": 1,
+    "date": "2026-03-07",
+    "userId": 1,
+    "userName": "Administrator",
+    "notes": "Peminjaman disetujui"
+  },
+  {
+    "id": 1,
+    "itemId": 1,
+    "itemName": "Laptop Ngawi",
+    "type": "in",
+    "quantity": 5,
+    "date": "2025-10-01",
+    "userId": 1,
+    "userName": "Administrator",
+    "notes": "Pembelian baru dari supplier",
+    "totalPrice": 125000000
+  }
+]
