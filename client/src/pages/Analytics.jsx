@@ -48,7 +48,7 @@ export default function Analytics() {
       stacked: false,
       height: 350,
       zoom: { type: 'x', enabled: true, autoScaleYaxis: true },
-      toolbar: { autoSelected: 'zoom' }
+      toolbar: { autoSelected: 'zoom', show: true }
     },
     dataLabels: { enabled: false },
     markers: { size: 0 },
@@ -63,12 +63,32 @@ export default function Analytics() {
         stops: [0, 90, 100]
       }
     },
+    stroke: {
+      curve: 'smooth',
+      width: 3
+    },
     yaxis: {
       labels: { formatter: v => String(Math.round(v)) },
       title: { text: 'Unit' }
     },
     xaxis: { type: 'datetime' },
-    tooltip: { shared: false, y: { formatter: v => String(Math.round(v)) } }
+    tooltip: { shared: true, y: { formatter: v => String(Math.round(v)) } },
+    grid: { strokeDashArray: 4 },
+    responsive: [
+      {
+        breakpoint: 1280,
+        options: {
+          chart: { height: 320 }
+        }
+      },
+      {
+        breakpoint: 768,
+        options: {
+          chart: { height: 300 },
+          title: { style: { fontSize: '13px' } }
+        }
+      }
+    ]
   }
 
   const categoryData = useMemo(() => {
@@ -83,8 +103,8 @@ export default function Analytics() {
   }, [items])
 
   const barOptions = {
-    chart: { height: 350, type: 'bar' },
-    plotOptions: { bar: { borderRadius: 10, dataLabels: { position: 'top' } } },
+    chart: { height: 350, type: 'bar', toolbar: { show: false } },
+    plotOptions: { bar: { borderRadius: 10, dataLabels: { position: 'top' }, columnWidth: '52%' } },
     dataLabels: {
       enabled: true,
       formatter: val => String(val),
@@ -96,6 +116,11 @@ export default function Analytics() {
       position: 'top',
       axisBorder: { show: false },
       axisTicks: { show: false },
+      labels: {
+        trim: true,
+        hideOverlappingLabels: true,
+        rotate: 0
+      },
       crosshairs: {
         fill: {
           type: 'gradient',
@@ -113,16 +138,35 @@ export default function Analytics() {
     yaxis: {
       axisBorder: { show: false },
       axisTicks: { show: false },
-      labels: { show: false }
+      labels: { show: true }
     },
     title: {
       text: 'Distribusi Stok per Kategori',
-      floating: true,
-      offsetY: 330,
-      align: 'center',
+      floating: false,
+      align: 'left',
       style: { color: '#444' }
     },
-    grid: { strokeDashArray: 3 }
+    grid: { strokeDashArray: 3 },
+    responsive: [
+      {
+        breakpoint: 1024,
+        options: {
+          chart: { height: 320 },
+          plotOptions: { bar: { columnWidth: '60%' } }
+        }
+      },
+      {
+        breakpoint: 640,
+        options: {
+          chart: { height: 300 },
+          xaxis: {
+            labels: {
+              rotate: -35
+            }
+          }
+        }
+      }
+    ]
   }
   const barSeries = [{ name: 'Stok', data: categoryData.vals }]
 
@@ -132,8 +176,8 @@ export default function Analytics() {
   }, [items])
 
   const topOptions = {
-    chart: { height: 350, type: 'bar' },
-    plotOptions: { bar: { columnWidth: '60%' } },
+    chart: { height: 350, type: 'bar', toolbar: { show: false } },
+    plotOptions: { bar: { columnWidth: '60%', borderRadius: 8 } },
     colors: ['#00E396'],
     dataLabels: { enabled: false },
     legend: {
@@ -142,9 +186,27 @@ export default function Analytics() {
       customLegendItems: ['Actual'],
       markers: { fillColors: ['#00E396'] }
     },
-    xaxis: { type: 'category' },
+    xaxis: {
+      type: 'category',
+      labels: {
+        rotate: -35,
+        trim: true,
+        hideOverlappingLabels: false
+      }
+    },
     grid: { strokeDashArray: 3 },
-    title: { text: 'Top 10 Stok Barang', align: 'left' }
+    title: { text: 'Top 10 Stok Barang', align: 'left' },
+    responsive: [
+      {
+        breakpoint: 768,
+        options: {
+          chart: { height: 320 },
+          xaxis: {
+            labels: { rotate: -45 }
+          }
+        }
+      }
+    ]
   }
   const topSeries = [{ name: 'Actual', data: topItemsData }]
 
@@ -152,8 +214,10 @@ export default function Analytics() {
     const borrowedQty = borrowings
       .filter(b => b.status === 'borrowed')
       .reduce((s, b) => s + Number(b.quantity || 0), 0)
+
     const total = items.reduce((s, it) => s + Number(it.stock || 0), 0)
-    const available = Math.max(total, 0)
+    const available = Math.max(total - borrowedQty, 0)
+
     const returnPendingQty = borrowings
       .filter(b => b.status === 'borrowed' && b.returnRequestStatus === 'pending')
       .reduce((s, b) => s + Number(b.quantity || 0), 0)
@@ -202,11 +266,26 @@ export default function Analytics() {
     plotOptions: { bar: { borderRadius: 8, columnWidth: '52%' } },
     dataLabels: { enabled: false },
     xaxis: {
-      categories: monthlyBorrowSeries.categories
+      categories: monthlyBorrowSeries.categories,
+      labels: {
+        rotate: 0,
+        trim: true
+      }
     },
     legend: { position: 'top' },
     grid: { strokeDashArray: 3 },
-    title: { text: 'Tren Pengajuan Pinjam vs Sewa', align: 'left' }
+    title: { text: 'Tren Pengajuan Bulanan', align: 'left' },
+    responsive: [
+      {
+        breakpoint: 768,
+        options: {
+          chart: { height: 320 },
+          xaxis: {
+            labels: { rotate: -35 }
+          }
+        }
+      }
+    ]
   }
 
   const latestSummary = useMemo(() => {
@@ -219,8 +298,13 @@ export default function Analytics() {
       .slice(0, 6)
   }, [borrowings])
 
+  const chartCardCls =
+    'card min-w-0 overflow-hidden h-full'
+  const chartWrapCls =
+    'w-full min-w-0 overflow-hidden'
+
   return (
-    <div className="space-y-6 animate-fadeIn">
+    <div className="space-y-6 animate-fadeIn w-full min-w-0">
       <div>
         <h1 className="text-3xl font-bold text-gray-800">Analytics</h1>
         <p className="text-gray-600 mt-1">
@@ -228,35 +312,44 @@ export default function Analytics() {
         </p>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <div className="card">
+      <div className="grid grid-cols-1 2xl:grid-cols-2 gap-6 w-full min-w-0">
+        <div className={chartCardCls}>
           <h3 className="text-xl font-bold text-gray-800 mb-4">Tren Barang Masuk & Keluar</h3>
-          <div className="h-80">
+          <div className={chartWrapCls}>
             <ReactApexChart options={lineOptions} series={trendSeries} type="area" height={350} />
           </div>
         </div>
 
-        <div className="card">
+        <div className={chartCardCls}>
           <h3 className="text-xl font-bold text-gray-800 mb-4">Distribusi Kategori</h3>
-          <div className="h-80">
+          <div className={chartWrapCls}>
             <ReactApexChart options={barOptions} series={barSeries} type="bar" height={350} />
           </div>
         </div>
 
-        <div className="card">
+        <div className={chartCardCls}>
           <h3 className="text-xl font-bold text-gray-800 mb-4">Top 10 Stok Barang</h3>
-          <div className="h-80">
+          <div className={chartWrapCls}>
             <ReactApexChart options={topOptions} series={topSeries} type="bar" height={350} />
           </div>
         </div>
 
-        <div className="card">
+        <div className={chartCardCls}>
           <h3 className="text-xl font-bold text-gray-800 mb-4">Komposisi Status</h3>
-          <div className="h-80">
+          <div className={chartWrapCls}>
             <ReactApexChart
               options={{
                 labels: statusData.map(d => d.name),
-                legend: { position: 'bottom' }
+                legend: { position: 'bottom' },
+                responsive: [
+                  {
+                    breakpoint: 768,
+                    options: {
+                      chart: { height: 320 },
+                      legend: { position: 'bottom' }
+                    }
+                  }
+                ]
               }}
               series={statusData.map(d => d.value)}
               type="pie"
@@ -265,13 +358,21 @@ export default function Analytics() {
           </div>
         </div>
 
-        <div className="card">
+        <div className={chartCardCls}>
           <h3 className="text-xl font-bold text-gray-800 mb-4">Komposisi Jenis Layanan</h3>
-          <div className="h-80">
+          <div className={chartWrapCls}>
             <ReactApexChart
               options={{
                 labels: ['Peminjaman', 'Penyewaan'],
-                legend: { position: 'bottom' }
+                legend: { position: 'bottom' },
+                responsive: [
+                  {
+                    breakpoint: 768,
+                    options: {
+                      chart: { height: 320 }
+                    }
+                  }
+                ]
               }}
               series={borrowTypeSeries}
               type="donut"
@@ -280,9 +381,9 @@ export default function Analytics() {
           </div>
         </div>
 
-        <div className="card">
+        <div className={chartCardCls}>
           <h3 className="text-xl font-bold text-gray-800 mb-4">Tren Pengajuan Bulanan</h3>
-          <div className="h-80">
+          <div className={chartWrapCls}>
             <ReactApexChart
               options={monthlyBorrowOptions}
               series={monthlyBorrowSeries.series}
@@ -293,23 +394,23 @@ export default function Analytics() {
         </div>
       </div>
 
-      <div className="card">
+      <div className="card w-full min-w-0">
         <h3 className="text-xl font-bold text-gray-800 mb-4">Ringkasan Pengajuan Terbaru</h3>
         <div className="space-y-3">
           {latestSummary.map(row => (
             <div
               key={row.id}
-              className="flex items-center justify-between gap-4 p-3 rounded-xl bg-slate-50"
+              className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 p-3 rounded-xl bg-slate-50"
             >
-              <div>
-                <p className="font-medium text-slate-800">
+              <div className="min-w-0">
+                <p className="font-medium text-slate-800 break-words">
                   {row.borrowerName} - {row.itemName}
                 </p>
                 <p className="text-sm text-slate-500">
                   {borrowTypeLabel(row.borrowType)} • {row.quantity} unit
                 </p>
               </div>
-              <div className="text-sm font-semibold text-slate-700 text-right">
+              <div className="text-sm font-semibold text-slate-700 sm:text-right">
                 {row.status === 'borrowed' && row.returnRequestStatus === 'pending'
                   ? 'Menunggu Verifikasi Return'
                   : row.status}

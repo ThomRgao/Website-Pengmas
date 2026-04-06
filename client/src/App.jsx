@@ -1,4 +1,4 @@
-import React, { useState } from 'react'
+import React, { useMemo, useState } from 'react'
 import { Routes, Route, Navigate, useLocation } from 'react-router-dom'
 import Sidebar from './components/Sidebar'
 import Topbar from './components/Topbar'
@@ -21,13 +21,21 @@ export default function App() {
   const user = JSON.parse(localStorage.getItem('user') || 'null')
   const isAdmin = user?.role === 'admin'
 
+  const contentWrapperClass = useMemo(() => {
+    return loc.pathname === '/analytics'
+      ? 'w-full max-w-none'
+      : 'w-full max-w-none'
+  }, [loc.pathname])
+
   const adminFrame = children => (
     <div className="min-h-screen grid grid-cols-[auto_1fr] bg-gray-50">
       <Sidebar user={user} open={sidebarOpen} />
-      <div>
+      <div className="min-w-0 w-full">
         <Topbar user={user} onToggleSidebar={() => setSidebarOpen(s => !s)} />
-        <main className="p-6">
-          <div className="max-w-7xl mx-auto">{children}</div>
+        <main className="p-4 sm:p-5 lg:p-6 xl:p-7 w-full">
+          <div className={contentWrapperClass}>
+            {children}
+          </div>
         </main>
       </div>
     </div>

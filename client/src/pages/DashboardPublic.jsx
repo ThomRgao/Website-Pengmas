@@ -17,15 +17,20 @@ import {
   Boxes,
   BadgeCheck,
   Info,
-  AlertTriangle
+  AlertTriangle,
+  CalendarDays
 } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import api from '../api'
+import logoDesa from '../images/logo-desa.png'
+
+const todayISO = () => new Date().toISOString().slice(0, 10)
 
 const emptyBorrowForm = {
   borrowType: 'peminjaman',
   itemId: '',
   quantity: 1,
+  borrowDate: todayISO(),
   expectedReturn: '',
   notes: '',
   borrowerName: '',
@@ -263,7 +268,8 @@ export default function DashboardPublic() {
     setBorrowModalOpen(false)
     setBorrowForm({
       ...emptyBorrowForm,
-      borrowType: service
+      borrowType: service,
+      borrowDate: todayISO()
     })
 
     showToast(
@@ -289,7 +295,8 @@ export default function DashboardPublic() {
     setBorrowForm({
       ...emptyBorrowForm,
       itemId: item.id,
-      borrowType: selectedService
+      borrowType: selectedService,
+      borrowDate: todayISO()
     })
     setPaymentPreviewName('')
     setBorrowModalOpen(true)
@@ -342,6 +349,7 @@ export default function DashboardPublic() {
       `Barang: ${selectedItem?.name || '-'}\n` +
       `Jumlah: ${payload.quantity}\n` +
       `Alamat: ${payload.borrowerAddress || '-'}\n` +
+      `Tanggal Pinjam: ${payload.borrowDate || '-'}\n` +
       `Rencana Kembali: ${payload.expectedReturn || '-'}\n` +
       `Keperluan: ${payload.notes || '-'}\n\n` +
       `${payload.borrowType === 'penyewaan' ? 'Bukti pembayaran sudah diupload.' : 'Mohon dicek ya.'}`
@@ -369,6 +377,33 @@ export default function DashboardPublic() {
       return
     }
 
+    if (!borrowForm.borrowDate) {
+      showToast(
+        'warning',
+        'Warning!',
+        'Tanggal peminjaman / penyewaan wajib diisi.'
+      )
+      return
+    }
+
+    if (!borrowForm.expectedReturn) {
+      showToast(
+        'warning',
+        'Warning!',
+        'Tanggal pengembalian wajib diisi.'
+      )
+      return
+    }
+
+    if (borrowForm.expectedReturn < borrowForm.borrowDate) {
+      showToast(
+        'warning',
+        'Warning!',
+        'Tanggal pengembalian tidak boleh lebih awal dari tanggal peminjaman.'
+      )
+      return
+    }
+
     if (Number(borrowForm.quantity || 0) < 1) {
       showToast(
         'warning',
@@ -391,6 +426,7 @@ export default function DashboardPublic() {
       borrowType: borrowForm.borrowType,
       itemId: borrowForm.itemId,
       quantity: Number(borrowForm.quantity || 1),
+      borrowDate: borrowForm.borrowDate,
       expectedReturn: borrowForm.expectedReturn,
       notes: borrowForm.notes,
       borrowerName: borrowForm.borrowerName,
@@ -407,7 +443,10 @@ export default function DashboardPublic() {
 
     setBorrowModalOpen(false)
     setSelectedItem(null)
-    setBorrowForm(emptyBorrowForm)
+    setBorrowForm({
+      ...emptyBorrowForm,
+      borrowDate: todayISO()
+    })
     setPaymentPreviewName('')
     await load()
 
@@ -517,10 +556,16 @@ export default function DashboardPublic() {
       <section className="bg-white border-b border-slate-100 sticky top-0 z-30">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 py-4 sm:py-5 flex flex-col lg:flex-row lg:items-center justify-between gap-4">
           <div className="flex items-center gap-4 min-w-0">
-            <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-blue-600 to-violet-600 shadow-md shrink-0"></div>
+            <div className="w-14 h-14 rounded-2xl bg-white border border-slate-200 shadow-sm overflow-hidden shrink-0 flex items-center justify-center">
+              <img
+                src={logoDesa}
+                alt="Logo Desa"
+                className="w-full h-full object-contain p-1"
+              />
+            </div>
             <div className="min-w-0">
               <h1 className="text-lg sm:text-2xl font-extrabold text-slate-800 tracking-tight truncate">
-                Layanan Peminjaman & Penyewaan Inventaris
+                Layanan Peminjaman & Penyewaan Inventaris Desa
               </h1>
               <p className="text-sm text-slate-500">
                 Pilih jenis layanan, ajukan barang, lalu kirim form pengembalian saat barang dikembalikan.
@@ -597,6 +642,13 @@ export default function DashboardPublic() {
                 </div>
                 <div className="flex gap-3">
                   <div className="w-9 h-9 rounded-full bg-white text-blue-700 font-bold flex items-center justify-center shrink-0">3</div>
+                  <div>
+                    <p className="font-semibold">Isi tanggal pinjam & kembali</p>
+                    <p className="text-sm text-white/80">Lengkapi tanggal pemakaian supaya pengajuan lebih jelas.</p>
+                  </div>
+                </div>
+                <div className="flex gap-3">
+                  <div className="w-9 h-9 rounded-full bg-white text-blue-700 font-bold flex items-center justify-center shrink-0">4</div>
                   <div>
                     <p className="font-semibold">Kirim pengembalian</p>
                     <p className="text-sm text-white/80">Pilih barang dari semua data barang, lalu kirim form ke admin.</p>
@@ -964,12 +1016,32 @@ export default function DashboardPublic() {
                     />
                   </div>
 
+                  <div className="flex items-end">
+                    <div className="w-full rounded-2xl border border-blue-100 bg-blue-50 px-4 py-3 text-blue-800 text-sm font-medium flex items-center gap-2">
+                      <CalendarDays size={16} />
+                      Lengkapi tanggal pinjam dan tanggal kembali
+                    </div>
+                  </div>
+
                   <div>
-                    <label className="text-sm text-slate-600">Rencana Tanggal Kembali</label>
+                    <label className="text-sm text-slate-600">Tanggal Peminjaman / Penyewaan</label>
+                    <input
+                      type="date"
+                      className="input"
+                      value={borrowForm.borrowDate}
+                      onChange={e =>
+                        setBorrowForm(prev => ({ ...prev, borrowDate: e.target.value }))
+                      }
+                    />
+                  </div>
+
+                  <div>
+                    <label className="text-sm text-slate-600">Tanggal Pengembalian</label>
                     <input
                       type="date"
                       className="input"
                       value={borrowForm.expectedReturn}
+                      min={borrowForm.borrowDate || todayISO()}
                       onChange={e =>
                         setBorrowForm(prev => ({ ...prev, expectedReturn: e.target.value }))
                       }

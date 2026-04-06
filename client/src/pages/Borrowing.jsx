@@ -3,13 +3,7 @@ import {
   Check,
   X,
   Eye,
-  RefreshCcw,
-  Phone,
-  MapPin,
-  Package,
-  Wallet,
-  HandCoins,
-  Image as ImageIcon
+  RefreshCcw
 } from 'lucide-react'
 import api from '../api'
 
@@ -102,7 +96,7 @@ export default function Borrowing() {
   }
 
   return (
-    <div className="space-y-6 animate-fadeIn w-full">
+    <div className="space-y-6 animate-fadeIn w-full min-w-0">
       <div>
         <h1 className="text-3xl font-bold text-gray-800">Tracking Peminjam</h1>
         <p className="text-gray-600 mt-1">
@@ -157,14 +151,15 @@ export default function Borrowing() {
         </button>
       </div>
 
-      <div className="card p-0 overflow-hidden">
+      <div className="card p-0 overflow-hidden w-full min-w-0">
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[1180px]">
+          <table className="w-full min-w-[1280px]">
             <thead>
               <tr className="border-b border-gray-200 bg-gray-50">
                 <th className="text-left p-4 font-semibold text-gray-700">Nama</th>
                 <th className="text-left p-4 font-semibold text-gray-700">Jenis</th>
                 <th className="text-left p-4 font-semibold text-gray-700">Barang</th>
+                <th className="text-left p-4 font-semibold text-gray-700">Tanggal</th>
                 <th className="text-left p-4 font-semibold text-gray-700">Kontak</th>
                 <th className="text-left p-4 font-semibold text-gray-700">Status</th>
                 <th className="text-left p-4 font-semibold text-gray-700">Return</th>
@@ -197,6 +192,13 @@ export default function Borrowing() {
                   <td className="p-4 text-gray-700">
                     <p className="font-medium">{row.itemName}</p>
                     <p className="text-sm text-gray-500">{row.quantity} unit</p>
+                  </td>
+
+                  <td className="p-4 text-gray-700">
+                    <div className="space-y-1 text-sm">
+                      <p><span className="font-medium">Pinjam:</span> {row.borrowDate || '-'}</p>
+                      <p><span className="font-medium">Kembali:</span> {row.expectedReturn || '-'}</p>
+                    </div>
                   </td>
 
                   <td className="p-4 text-gray-700">
@@ -274,7 +276,7 @@ export default function Borrowing() {
 
               {rows.length === 0 && (
                 <tr>
-                  <td className="p-6 text-gray-500" colSpan={7}>
+                  <td className="p-6 text-gray-500" colSpan={8}>
                     {loading ? 'Memuat data...' : 'Tidak ada data'}
                   </td>
                 </tr>
@@ -329,9 +331,9 @@ export default function Borrowing() {
                         <p><b>Submitted:</b> {detail.submittedAt || '-'}</p>
                         <p><b>Disetujui:</b> {detail.approvedAt || '-'}</p>
                         <p><b>Tanggal Pinjam / Sewa:</b> {detail.borrowDate || '-'}</p>
-                        <p><b>Rencana Kembali:</b> {detail.expectedReturn || '-'}</p>
+                        <p><b>Tanggal Kembali:</b> {detail.expectedReturn || '-'}</p>
                         <p><b>Durasi:</b> {detail.durationDays || 0} hari</p>
-                        <p><b>Tanggal Kembali:</b> {detail.returnDate || '-'}</p>
+                        <p><b>Tanggal Return Final:</b> {detail.returnDate || '-'}</p>
                       </div>
                     </div>
 

@@ -5,6 +5,7 @@ import dotenv from 'dotenv'
 import fs from 'fs'
 import path from 'path'
 import { fileURLToPath } from 'url'
+import pool, { testMysqlConnection } from './db/mysql.js'
 
 dotenv.config()
 
@@ -61,6 +62,7 @@ function normalizeServiceMode(value) {
   if (raw === 'rent') return 'rent'
   if (raw === 'both') return 'both'
   if (raw === 'keduanya') return 'both'
+  if (raw === 'pinjam_dan_sewa') return 'both'
 
   return 'both'
 }
@@ -239,6 +241,8 @@ function getBorrowings() {
   return rows.map(row => ({
     ...row,
     borrowType: normalizeBorrowType(row.borrowType || 'peminjaman'),
+    borrowDate: row.borrowDate || row.submittedAt || '',
+    expectedReturn: row.expectedReturn || '',
     returnRequestStatus: row.returnRequestStatus || (row.status === 'return_requested' ? 'pending' : null),
     returnRequestedAt: row.returnRequestedAt || null,
     returnVerifiedAt: row.returnVerifiedAt || null,
@@ -350,6 +354,11 @@ function isItemAllowedForType(item, borrowType) {
   return false
 }
 
+function isValidISODate(dateStr) {
+  if (!dateStr) return false
+  return /^\d{4}-\d{2}-\d{2}$/.test(String(dateStr))
+}
+
 function fillTemplate(template, payload) {
   let text = String(template || '')
   Object.keys(payload || {}).forEach(key => {
@@ -428,6 +437,35 @@ async function sendWhatsappNotification({ config, borrowing }) {
     }
   }
 }
+
+async function bootstrapMysqlConnection() {
+  try {
+    const status = await testMysqlConnection()
+    console.log('MySQL connected:', status)
+  } catch (error) {
+    console.error('MySQL connection failed:', error?.message || error)
+  }
+}
+
+app.get('/api/db-status', async (_req, res) => {
+  try {
+    const [rows] = await pool.query('SELECT DATABASE() AS database_name, NOW() AS server_time')
+    return res.json({
+      success: true,
+      message: 'Koneksi database MySQL berhasil',
+      database: rows?.[0]?.database_name || process.env.DB_NAME || 'inventory',
+      serverTime: rows?.[0]?.server_time || null,
+      host: process.env.DB_HOST || 'localhost',
+      port: Number(process.env.DB_PORT || 3306)
+    })
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      message: 'Koneksi database MySQL gagal',
+      error: error?.message || 'Unknown database error'
+    })
+  }
+})
 
 app.post('/api/auth/login', (req, res) => {
   const { username, password } = req.body
@@ -646,6 +684,7 @@ app.post('/api/borrowings', async (req, res) => {
     borrowType,
     itemId,
     quantity,
+    borrowDate,
     expectedReturn,
     notes,
     borrowerName,
@@ -660,6 +699,8 @@ app.post('/api/borrowings', async (req, res) => {
   const config = getPublicConfig()
 
   const normalizedBorrowType = normalizeBorrowType(borrowType || 'peminjaman')
+  const normalizedBorrowDate = borrowDate || todayISO()
+  const normalizedExpectedReturn = expectedReturn || ''
   const item = items.find(i => i.id === Number(itemId))
 
   if (!item) return res.status(404).json({ error: 'Item tidak ditemukan' })
@@ -675,6 +716,24 @@ app.post('/api/borrowings', async (req, res) => {
   if (!borrowerName || !borrowerPhone) {
     return res.status(400).json({
       error: 'Nama dan no HP wajib diisi'
+    })
+  }
+
+  if (!isValidISODate(normalizedBorrowDate)) {
+    return res.status(400).json({
+      error: 'Tanggal peminjaman / penyewaan tidak valid'
+    })
+  }
+
+  if (!isValidISODate(normalizedExpectedReturn)) {
+    return res.status(400).json({
+      error: 'Tanggal pengembalian tidak valid'
+    })
+  }
+
+  if (normalizedExpectedReturn < normalizedBorrowDate) {
+    return res.status(400).json({
+      error: 'Tanggal pengembalian tidak boleh lebih awal dari tanggal peminjaman'
     })
   }
 
@@ -699,10 +758,10 @@ app.post('/api/borrowings', async (req, res) => {
     notes: notes || '',
     submittedAt,
     approvedAt: null,
-    borrowDate: null,
-    expectedReturn: expectedReturn || '',
+    borrowDate: normalizedBorrowDate,
+    expectedReturn: normalizedExpectedReturn,
     returnDate: null,
-    durationDays: diffDays(submittedAt, expectedReturn),
+    durationDays: diffDays(normalizedBorrowDate, normalizedExpectedReturn),
     linkedReturnId: null,
     returnRequestStatus: null,
     returnRequestedAt: null,
@@ -767,7 +826,7 @@ app.patch('/api/borrowings/:id/approve', auth, isAdmin, (req, res) => {
   item.stock -= Number(borrowing.quantity)
   borrowing.status = 'borrowed'
   borrowing.approvedAt = todayISO()
-  borrowing.borrowDate = todayISO()
+  borrowing.borrowDate = borrowing.borrowDate || todayISO()
   borrowing.updatedAt = nowISODateTime()
 
   const trans = {
@@ -1024,6 +1083,8 @@ app.post('/api/returns-public/:id/verify', auth, isAdmin, (req, res) => {
 
 app.get('/', (_req, res) => res.send('Inventory API OK'))
 
-app.listen(PORT, () => {
-  console.log(`Server running on http://localhost:${PORT}`)
+bootstrapMysqlConnection().finally(() => {
+  app.listen(PORT, () => {
+    console.log(`Server running on http://localhost:${PORT}`)
+  })
 })
