@@ -1,78 +1,68 @@
 import dotenv from 'dotenv'
+import pkg from 'pg'
 
 dotenv.config()
 
-let mysqlLib = null
-let pool = null
-let mysqlDriverError = null
+const { Pool } = pkg
 
-async function loadMysqlLibrary() {
-  if (mysqlLib) return mysqlLib
+let pgPool = null
 
-  try {
-    const mysqlModule = await import('mysql2/promise')
-    mysqlLib = mysqlModule.default || mysqlModule
-    return mysqlLib
-  } catch (error) {
-    mysqlDriverError = error
-    return null
-  }
-}
+function buildPostgresConfig() {
+  const useSsl = String(process.env.DB_SSL || 'false').toLowerCase() === 'true'
 
-function buildMysqlConfig() {
   return {
     host: process.env.DB_HOST || 'localhost',
-    port: Number(process.env.DB_PORT || 3306),
-    user: process.env.DB_USER || 'root',
+    port: Number(process.env.DB_PORT || 5432),
+    user: process.env.DB_USER || 'postgres',
     password: process.env.DB_PASSWORD || '',
     database: process.env.DB_NAME || 'inventory',
-    waitForConnections: true,
-    connectionLimit: Number(process.env.DB_CONNECTION_LIMIT || 10),
-    queueLimit: 0,
-    namedPlaceholders: true
+    ssl: useSsl ? { rejectUnauthorized: false } : false,
+    max: Number(process.env.DB_CONNECTION_LIMIT || 10),
+    idleTimeoutMillis: 30000,
+    connectionTimeoutMillis: 10000
   }
 }
 
-async function getPool() {
-  if (pool) return pool
+function getPool() {
+  if (pgPool) return pgPool
 
-  const mysql = await loadMysqlLibrary()
+  pgPool = new Pool(buildPostgresConfig())
 
-  if (!mysql) {
-    const driverError = mysqlDriverError?.message || 'Driver mysql2 belum terpasang'
-    throw new Error(`MySQL driver tidak tersedia. ${driverError}`)
-  }
+  pgPool.on('error', error => {
+    console.error('PostgreSQL pool error:', error?.message || error)
+  })
 
-  pool = mysql.createPool(buildMysqlConfig())
-  return pool
+  return pgPool
 }
 
 export async function testMysqlConnection() {
-  const activePool = await getPool()
-  const connection = await activePool.getConnection()
+  const pool = getPool()
+  const client = await pool.connect()
 
   try {
-    const [rows] = await connection.query('SELECT DATABASE() AS nama_database, NOW() AS waktu_server')
+    const result = await client.query(
+      'SELECT current_database() AS nama_database, NOW() AS waktu_server'
+    )
+
     return {
       success: true,
-      database: rows?.[0]?.nama_database || process.env.DB_NAME || 'inventory',
-      serverTime: rows?.[0]?.waktu_server || null
+      database: result?.rows?.[0]?.nama_database || process.env.DB_NAME || 'inventory',
+      serverTime: result?.rows?.[0]?.waktu_server || null
     }
   } finally {
-    connection.release()
+    client.release()
   }
 }
 
 export async function query(sql, params = []) {
-  const activePool = await getPool()
-  const [rows] = await activePool.query(sql, params)
-  return rows
+  const pool = getPool()
+  const result = await pool.query(sql, params)
+  return result.rows
 }
 
 export async function execute(sql, params = []) {
-  const activePool = await getPool()
-  const [result] = await activePool.execute(sql, params)
-  return result
+  const pool = getPool()
+  return pool.query(sql, params)
 }
 
 const lazyPool = new Proxy(
@@ -80,30 +70,23 @@ const lazyPool = new Proxy(
   {
     get(_target, prop) {
       if (prop === 'query') {
-        return async (...args) => {
-          const activePool = await getPool()
-          return activePool.query(...args)
+        return async (sql, params = []) => {
+          const pool = getPool()
+          return pool.query(sql, params)
         }
       }
 
-      if (prop === 'execute') {
-        return async (...args) => {
-          const activePool = await getPool()
-          return activePool.execute(...args)
-        }
-      }
-
-      if (prop === 'getConnection') {
-        return async (...args) => {
-          const activePool = await getPool()
-          return activePool.getConnection(...args)
+      if (prop === 'connect') {
+        return async () => {
+          const pool = getPool()
+          return pool.connect()
         }
       }
 
       if (prop === 'end') {
-        return async (...args) => {
-          if (!pool) return null
-          return pool.end(...args)
+        return async () => {
+          if (!pgPool) return null
+          return pgPool.end()
         }
       }
 
