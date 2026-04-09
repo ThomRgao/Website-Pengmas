@@ -180,16 +180,6 @@ export default function Settings() {
               </div>
 
               <div>
-                <label className="text-sm text-gray-600">Nomor WhatsApp Admin</label>
-                <input
-                  className="input"
-                  value={adminWhatsappNumber}
-                  onChange={e => setAdminWhatsappNumber(e.target.value)}
-                  placeholder="628xxxxxxxxxx"
-                />
-              </div>
-
-              <div>
                 <label className="text-sm text-gray-600">URL API WhatsApp</label>
                 <input
                   className="input"
@@ -199,15 +189,7 @@ export default function Settings() {
                 />
               </div>
 
-              <div>
-                <label className="text-sm text-gray-600">Token API WhatsApp</label>
-                <input
-                  className="input"
-                  value={whatsappApiToken}
-                  onChange={e => setWhatsappApiToken(e.target.value)}
-                  placeholder="Bearer token / API token"
-                />
-              </div>
+      
             </div>
 
             <div>

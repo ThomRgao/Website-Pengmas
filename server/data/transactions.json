@@ -1,5 +1,104 @@
 [
   {
+    "id": 21,
+    "itemId": 3,
+    "itemName": "Kursi Kantor",
+    "type": "in",
+    "quantity": 1,
+    "date": "2026-04-09",
+    "userId": 1,
+    "userName": "Administrator",
+    "notes": "Pengembalian penyewaan diverifikasi admin"
+  },
+  {
+    "id": 20,
+    "itemId": 3,
+    "itemName": "Kursi Kantor",
+    "type": "in",
+    "quantity": 1,
+    "date": "2026-04-09",
+    "userId": 1,
+    "userName": "Administrator",
+    "notes": "Pengembalian penyewaan diverifikasi admin"
+  },
+  {
+    "id": 19,
+    "itemId": 3,
+    "itemName": "Kursi Kantor",
+    "type": "out",
+    "quantity": 1,
+    "date": "2026-04-09",
+    "userId": 1,
+    "userName": "Administrator",
+    "notes": "Penyewaan disetujui"
+  },
+  {
+    "id": 18,
+    "itemId": 3,
+    "itemName": "Kursi Kantor",
+    "type": "out",
+    "quantity": 1,
+    "date": "2026-04-09",
+    "userId": 1,
+    "userName": "Administrator",
+    "notes": "Penyewaan disetujui"
+  },
+  {
+    "id": 17,
+    "itemId": 3,
+    "itemName": "Kursi Kantor",
+    "type": "out",
+    "quantity": 1,
+    "date": "2026-04-09",
+    "userId": 1,
+    "userName": "Administrator",
+    "notes": "Penyewaan disetujui"
+  },
+  {
+    "id": 16,
+    "itemId": 1,
+    "itemName": "Laptop Ngawi",
+    "type": "out",
+    "quantity": 1,
+    "date": "2026-04-09",
+    "userId": 1,
+    "userName": "Administrator",
+    "notes": "Penyewaan disetujui"
+  },
+  {
+    "id": 15,
+    "itemId": 2,
+    "itemName": "Proyektor Amba",
+    "type": "out",
+    "quantity": 1,
+    "date": "2026-04-09",
+    "userId": 1,
+    "userName": "Administrator",
+    "notes": "Penyewaan disetujui"
+  },
+  {
+    "id": 14,
+    "itemId": 4,
+    "itemName": "Lemari Razan",
+    "type": "out",
+    "quantity": 1,
+    "date": "2026-04-09",
+    "userId": 1,
+    "userName": "Administrator",
+    "notes": "Penyewaan disetujui"
+  },
+  {
+    "id": 13,
+    "itemId": 1,
+    "itemName": "Laptop Ngawi",
+    "type": "in",
+    "quantity": 1,
+    "date": "2026-04-09",
+    "userId": 1,
+    "userName": "Administrator",
+    "notes": "Pengembalian penyewaan diverifikasi admin"
+  },
+  {
     "id": 12,
     "itemId": 1,
     "itemName": "Laptop Ngawi",
