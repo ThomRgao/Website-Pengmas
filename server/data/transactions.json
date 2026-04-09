@@ -1,5 +1,38 @@
 [
   {
+    "id": 12,
+    "itemId": 1,
+    "itemName": "Laptop Ngawi",
+    "type": "out",
+    "quantity": 1,
+    "date": "2026-04-06",
+    "userId": 1,
+    "userName": "Administrator",
+    "notes": "Penyewaan disetujui"
+  },
+  {
+    "id": 11,
+    "itemId": 1,
+    "itemName": "Laptop Ngawi",
+    "type": "out",
+    "quantity": 1,
+    "date": "2026-04-06",
+    "userId": 1,
+    "userName": "Administrator",
+    "notes": "Peminjaman disetujui"
+  },
+  {
+    "id": 10,
+    "itemId": 2,
+    "itemName": "Proyektor Amba",
+    "type": "out",
+    "quantity": 1,
+    "date": "2026-04-06",
+    "userId": 1,
+    "userName": "Administrator",
+    "notes": "Penyewaan disetujui"
+  },
+  {
     "id": 9,
     "itemId": 7,
     "itemName": "Kursi",

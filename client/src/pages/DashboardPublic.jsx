@@ -18,11 +18,15 @@ import {
   BadgeCheck,
   Info,
   AlertTriangle,
-  CalendarDays
+  CalendarDays,
+  UserRound,
+  Phone,
+  ZoomIn,
+  ZoomOut,
+  ExternalLink
 } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import api from '../api'
-import logoDesa from '../images/logo-desa.png'
 
 const todayISO = () => new Date().toISOString().slice(0, 10)
 
@@ -41,6 +45,7 @@ const emptyBorrowForm = {
 }
 
 const emptyReturnForm = {
+  borrowingId: '',
   itemId: '',
   returnerName: '',
   returnerPhone: '',
@@ -120,6 +125,11 @@ function serviceModeLabel(mode) {
   return 'Peminjaman & Penyewaan'
 }
 
+function borrowTypeLabel(type) {
+  if (type === 'penyewaan') return 'Penyewaan'
+  return 'Peminjaman'
+}
+
 function canBorrow(item) {
   const mode = String(item?.serviceMode || 'both')
   return mode === 'borrow' || mode === 'both'
@@ -160,6 +170,8 @@ export default function DashboardPublic() {
 
   const [paymentPreviewName, setPaymentPreviewName] = useState('')
   const [returnPreviewName, setReturnPreviewName] = useState('')
+  const [qrisViewerOpen, setQrisViewerOpen] = useState(false)
+  const [qrisZoom, setQrisZoom] = useState(1)
 
   const [toast, setToast] = useState({
     open: false,
@@ -179,6 +191,27 @@ export default function DashboardPublic() {
       title,
       message
     })
+  }
+
+  const getRentalQrisSrc = () => {
+    if (config?.rentalQrisImage) return config.rentalQrisImage
+    if (config?.rentalQrisLink) {
+      return `https://api.qrserver.com/v1/create-qr-code/?size=220x220&data=${encodeURIComponent(
+        config.rentalQrisLink
+      )}`
+    }
+    return ''
+  }
+
+  const clampZoom = value => Math.min(4, Math.max(1, Number(value || 1)))
+
+  const closeQrisViewer = () => {
+    setQrisViewerOpen(false)
+    setQrisZoom(1)
+  }
+
+  const changeQrisZoom = delta => {
+    setQrisZoom(prev => clampZoom(prev + delta))
   }
 
   const load = async () => {
@@ -225,6 +258,17 @@ export default function DashboardPublic() {
     return () => document.removeEventListener('mousedown', onClickOutside)
   }, [returnDropdownOpen])
 
+  useEffect(() => {
+    const onKeydown = e => {
+      if (e.key === 'Escape' && qrisViewerOpen) {
+        closeQrisViewer()
+      }
+    }
+
+    document.addEventListener('keydown', onKeydown)
+    return () => document.removeEventListener('keydown', onKeydown)
+  }, [qrisViewerOpen])
+
   const availableItems = useMemo(
     () => items.filter(i => Number(i.stock || 0) > 0),
     [items]
@@ -244,23 +288,93 @@ export default function DashboardPublic() {
     return []
   }, [availableItems, selectedService])
 
-  const selectedReturnItem = useMemo(() => {
-    return items.find(i => String(i.id) === String(returnForm.itemId)) || null
-  }, [items, returnForm.itemId])
+  const activeBorrowings = useMemo(() => {
+    return borrowings.filter(
+      b =>
+        b.status === 'borrowed' &&
+        b.returnRequestStatus !== 'pending'
+    )
+  }, [borrowings])
 
-  const filteredReturnItems = useMemo(() => {
+  const activeReturnableRows = useMemo(() => {
+    return activeBorrowings
+      .map(borrowing => {
+        const item = items.find(i => String(i.id) === String(borrowing.itemId))
+        if (!item) return null
+
+        return {
+          borrowingId: borrowing.id,
+          itemId: item.id,
+          itemName: item.name,
+          itemCode: item.code,
+          itemCategory: item.category,
+          itemLocation: item.location,
+          itemCondition: item.condition,
+          itemImage: item.image,
+          itemServiceMode: item.serviceMode || 'both',
+          borrowerName: borrowing.borrowerName || '-',
+          borrowerPhone: borrowing.borrowerPhone || '-',
+          borrowerAddress: borrowing.borrowerAddress || '-',
+          quantity: Number(borrowing.quantity || 0),
+          borrowType: borrowing.borrowType || 'peminjaman',
+          borrowDate: borrowing.borrowDate || borrowing.requestedBorrowDate || '-',
+          expectedReturn: borrowing.expectedReturn || '-',
+          notes: borrowing.notes || '',
+          rawBorrowing: borrowing,
+          rawItem: item
+        }
+      })
+      .filter(Boolean)
+      .sort((a, b) => {
+        const da = new Date(
+          b.rawBorrowing?.updatedAt ||
+            b.rawBorrowing?.createdAt ||
+            b.rawBorrowing?.approvedAt ||
+            0
+        ).getTime()
+
+        const db = new Date(
+          a.rawBorrowing?.updatedAt ||
+            a.rawBorrowing?.createdAt ||
+            a.rawBorrowing?.approvedAt ||
+            0
+        ).getTime()
+
+        return da - db
+      })
+  }, [activeBorrowings, items])
+
+  const selectedReturnRow = useMemo(() => {
+    return (
+      activeReturnableRows.find(
+        row => String(row.borrowingId) === String(returnForm.borrowingId)
+      ) || null
+    )
+  }, [activeReturnableRows, returnForm.borrowingId])
+
+  const filteredReturnRows = useMemo(() => {
     const q = returnSearch.trim().toLowerCase()
-    if (!q) return items
 
-    return items.filter(item => {
-      const text = [item.name, item.code, item.category, item.location, item.condition]
+    if (!q) return activeReturnableRows
+
+    return activeReturnableRows.filter(row => {
+      const text = [
+        row.itemName,
+        row.itemCode,
+        row.itemCategory,
+        row.itemLocation,
+        row.itemCondition,
+        row.borrowerName,
+        row.borrowerPhone,
+        row.borrowType
+      ]
         .filter(Boolean)
         .join(' ')
         .toLowerCase()
 
       return text.includes(q)
     })
-  }, [items, returnSearch])
+  }, [activeReturnableRows, returnSearch])
 
   const chooseService = service => {
     setSelectedService(service)
@@ -302,43 +416,137 @@ export default function DashboardPublic() {
     setBorrowModalOpen(true)
   }
 
-  const handleSelectReturnItem = item => {
+  const handleSelectReturnRow = row => {
     setReturnForm(prev => ({
       ...prev,
-      itemId: item.id
+      borrowingId: row.borrowingId,
+      itemId: row.itemId
     }))
-    setReturnSearch(item.name)
+
+    setReturnSearch(`${row.itemName} - ${row.borrowerName}`)
     setReturnDropdownOpen(false)
 
     showToast(
       'info',
-      'Barang dipilih',
-      `${item.name} siap dimasukkan ke form pengembalian.`
+      'Data pengembalian dipilih',
+      `${row.itemName} sedang dipinjam oleh ${row.borrowerName}.`
     )
   }
 
-  const handlePaymentImage = file => {
+  const compressImageToDataUrl = file =>
+    new Promise((resolve, reject) => {
+      if (!file) {
+        resolve('')
+        return
+      }
+
+      const reader = new FileReader()
+
+      reader.onerror = () => {
+        reject(new Error('File tidak bisa dibaca'))
+      }
+
+      reader.onload = () => {
+        const img = new Image()
+
+        img.onerror = () => {
+          reject(new Error('Gambar tidak valid'))
+        }
+
+        img.onload = () => {
+          const maxWidth = 1600
+          const maxHeight = 1600
+          let { width, height } = img
+
+          if (width > maxWidth || height > maxHeight) {
+            const ratio = Math.min(maxWidth / width, maxHeight / height)
+            width = Math.round(width * ratio)
+            height = Math.round(height * ratio)
+          }
+
+          const canvas = document.createElement('canvas')
+          canvas.width = width
+          canvas.height = height
+
+          const ctx = canvas.getContext('2d')
+          ctx.fillStyle = '#ffffff'
+          ctx.fillRect(0, 0, width, height)
+          ctx.drawImage(img, 0, 0, width, height)
+
+          let quality = 0.82
+          let result = canvas.toDataURL('image/jpeg', quality)
+
+          while (result.length > 3500000 && quality > 0.45) {
+            quality -= 0.08
+            result = canvas.toDataURL('image/jpeg', quality)
+          }
+
+          resolve(result)
+        }
+
+        img.src = reader.result
+      }
+
+      reader.readAsDataURL(file)
+    })
+
+  const handlePaymentImage = async file => {
     if (!file) return
-    const reader = new FileReader()
-    reader.onload = () => {
+
+    try {
+      const compressedImage = await compressImageToDataUrl(file)
+
       setBorrowForm(prev => ({
         ...prev,
-        paymentProof: reader.result,
+        paymentProof: compressedImage,
         paymentProofName: file.name || 'Bukti pembayaran'
       }))
+
       setPaymentPreviewName(file.name || 'Bukti pembayaran')
+
+      showToast(
+        'success',
+        'Bukti pembayaran siap',
+        'Gambar berhasil diproses dan dioptimalkan untuk dikirim.'
+      )
+    } catch (error) {
+      setBorrowForm(prev => ({
+        ...prev,
+        paymentProof: '',
+        paymentProofName: ''
+      }))
+      setPaymentPreviewName('')
+      showToast(
+        'error',
+        'Upload bukti gagal',
+        error?.message || 'File gambar bukti pembayaran gagal diproses.'
+      )
     }
-    reader.readAsDataURL(file)
   }
 
-  const handleReturnImage = file => {
+  const handleReturnImage = async file => {
     if (!file) return
-    const reader = new FileReader()
-    reader.onload = () => {
-      setReturnForm(prev => ({ ...prev, returnPhoto: reader.result }))
+
+    try {
+      const compressedImage = await compressImageToDataUrl(file)
+
+      setReturnForm(prev => ({ ...prev, returnPhoto: compressedImage }))
       setReturnPreviewName(file.name || 'Foto diambil dari kamera')
+
+      showToast(
+        'success',
+        'Foto pengembalian siap',
+        'Foto berhasil diproses dan dioptimalkan untuk dikirim.'
+      )
+    } catch (error) {
+      setReturnForm(prev => ({ ...prev, returnPhoto: '' }))
+      setReturnPreviewName('')
+      showToast(
+        'error',
+        'Upload foto gagal',
+        error?.message || 'Foto pengembalian gagal diproses.'
+      )
     }
-    reader.readAsDataURL(file)
   }
 
   const buildWhatsAppMessage = payload => {
@@ -436,43 +644,51 @@ export default function DashboardPublic() {
       paymentProofName: borrowForm.paymentProofName
     }
 
-    await api.post('/borrowings', payload)
+    try {
+      await api.post('/borrowings', payload)
 
-    const isRental = borrowForm.borrowType === 'penyewaan'
-    const waMessage = buildWhatsAppMessage(payload)
+      const isRental = borrowForm.borrowType === 'penyewaan'
+      const waMessage = buildWhatsAppMessage(payload)
 
-    setBorrowModalOpen(false)
-    setSelectedItem(null)
-    setBorrowForm({
-      ...emptyBorrowForm,
-      borrowDate: todayISO()
-    })
-    setPaymentPreviewName('')
-    await load()
+      setBorrowModalOpen(false)
+      setSelectedItem(null)
+      setBorrowForm({
+        ...emptyBorrowForm,
+        borrowDate: todayISO()
+      })
+      setPaymentPreviewName('')
+      await load()
 
-    showToast(
-      'success',
-      'Success!',
-      isRental
-        ? 'Form penyewaan berhasil dikirim. WhatsApp admin akan dibuka.'
-        : 'Form peminjaman berhasil dikirim.'
-    )
+      showToast(
+        'success',
+        'Success!',
+        isRental
+          ? 'Form penyewaan berhasil dikirim. WhatsApp admin akan dibuka.'
+          : 'Form peminjaman berhasil dikirim.'
+      )
 
-    if (isRental) {
-      setTimeout(() => {
-        openWhatsAppAdminWithMessage(waMessage)
-      }, 500)
+      if (isRental) {
+        setTimeout(() => {
+          openWhatsAppAdminWithMessage(waMessage)
+        }, 500)
+      }
+    } catch (err) {
+      showToast(
+        'error',
+        'Gagal mengirim',
+        err?.response?.data?.error || 'Terjadi kesalahan saat mengirim pengajuan.'
+      )
     }
   }
 
   const submitReturn = async e => {
     e.preventDefault()
 
-    if (!returnForm.itemId) {
+    if (!returnForm.borrowingId) {
       showToast(
         'warning',
         'Warning!',
-        'Pilih dulu barang yang ingin dikembalikan.'
+        'Pilih dulu data peminjaman yang ingin dikembalikan.'
       )
       return
     }
@@ -495,26 +711,36 @@ export default function DashboardPublic() {
       return
     }
 
-    await api.post('/returns-public', {
-      itemId: returnForm.itemId,
-      returnerName: returnForm.returnerName,
-      returnerPhone: returnForm.returnerPhone,
-      conditionOnReturn: returnForm.conditionOnReturn,
-      returnNotes: returnForm.returnNotes,
-      returnPhoto: returnForm.returnPhoto
-    })
+    try {
+      await api.post('/returns-public', {
+        borrowingId: returnForm.borrowingId,
+        itemId: returnForm.itemId,
+        returnerName: returnForm.returnerName,
+        returnerPhone: returnForm.returnerPhone,
+        conditionOnReturn: returnForm.conditionOnReturn,
+        returnNotes: returnForm.returnNotes,
+        returnPhoto: returnForm.returnPhoto
+      })
 
-    setReturnModalOpen(false)
-    setReturnForm(emptyReturnForm)
-    setReturnPreviewName('')
-    setReturnSearch('')
-    await load()
+      setReturnModalOpen(false)
+      setReturnForm(emptyReturnForm)
+      setReturnPreviewName('')
+      setReturnSearch('')
+      setReturnDropdownOpen(false)
+      await load()
 
-    showToast(
-      'success',
-      'Success!',
-      'Form pengembalian berhasil dikirim dan menunggu verifikasi admin.'
-    )
+      showToast(
+        'success',
+        'Success!',
+        'Form pengembalian berhasil dikirim dan menunggu verifikasi admin.'
+      )
+    } catch (err) {
+      showToast(
+        'error',
+        'Pengembalian gagal',
+        err?.response?.data?.error || 'Terjadi kesalahan saat mengirim form pengembalian.'
+      )
+    }
   }
 
   return (
@@ -553,19 +779,72 @@ export default function DashboardPublic() {
         onClose={() => setToast(prev => ({ ...prev, open: false }))}
       />
 
+      {qrisViewerOpen && (
+        <div className="fixed inset-0 z-[130] bg-slate-950/75 backdrop-blur-sm px-4 py-6 sm:p-8">
+          <div className="mx-auto flex h-full w-full max-w-5xl flex-col">
+            <div className="mb-4 flex items-center justify-between gap-4 rounded-[24px] border border-white/10 bg-white/10 px-4 py-3 text-white shadow-lg backdrop-blur-md">
+              <div className="min-w-0">
+                <p className="text-sm font-semibold text-white/75">QRIS Penyewaan</p>
+                <p className="truncate text-base font-extrabold sm:text-lg">
+                  Klik tombol zoom untuk memperbesar atau memperkecil
+                </p>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => changeQrisZoom(-0.25)}
+                  className="inline-flex h-11 w-11 items-center justify-center rounded-2xl border border-white/15 bg-white/10 text-white transition hover:bg-white/20"
+                  title="Perkecil QRIS"
+                >
+                  <ZoomOut size={18} />
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => changeQrisZoom(0.25)}
+                  className="inline-flex h-11 w-11 items-center justify-center rounded-2xl border border-white/15 bg-white/10 text-white transition hover:bg-white/20"
+                  title="Perbesar QRIS"
+                >
+                  <ZoomIn size={18} />
+                </button>
+
+                <button
+                  type="button"
+                  onClick={closeQrisViewer}
+                  className="inline-flex h-11 w-11 items-center justify-center rounded-2xl border border-white/15 bg-white/10 text-white transition hover:bg-white/20"
+                  title="Tutup"
+                >
+                  <X size={18} />
+                </button>
+              </div>
+            </div>
+
+            <div className="flex-1 overflow-auto rounded-[28px] border border-white/10 bg-white/5 p-4 shadow-2xl backdrop-blur-md sm:p-6">
+              <div className="flex min-h-full items-center justify-center">
+                <img
+                  src={getRentalQrisSrc()}
+                  alt="QRIS Penyewaan"
+                  className="max-w-none rounded-[28px] border border-white/15 bg-white shadow-2xl transition-transform duration-200"
+                  style={{
+                    transform: `scale(${qrisZoom})`,
+                    transformOrigin: 'center center',
+                    width: 'min(380px, 82vw)'
+                  }}
+                />
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       <section className="bg-white border-b border-slate-100 sticky top-0 z-30">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 py-4 sm:py-5 flex flex-col lg:flex-row lg:items-center justify-between gap-4">
           <div className="flex items-center gap-4 min-w-0">
-            <div className="w-14 h-14 rounded-2xl bg-white border border-slate-200 shadow-sm overflow-hidden shrink-0 flex items-center justify-center">
-              <img
-                src={logoDesa}
-                alt="Logo Desa"
-                className="w-full h-full object-contain p-1"
-              />
-            </div>
+            <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-blue-600 to-violet-600 shadow-md shrink-0"></div>
             <div className="min-w-0">
               <h1 className="text-lg sm:text-2xl font-extrabold text-slate-800 tracking-tight truncate">
-                Layanan Peminjaman & Penyewaan Inventaris Desa
+                Layanan Peminjaman & Penyewaan Inventaris
               </h1>
               <p className="text-sm text-slate-500">
                 Pilih jenis layanan, ajukan barang, lalu kirim form pengembalian saat barang dikembalikan.
@@ -620,6 +899,10 @@ export default function DashboardPublic() {
                   <p className="text-white/80 text-sm">Total barang</p>
                   <p className="text-3xl font-extrabold">{items.length}</p>
                 </div>
+                <div className="rounded-2xl bg-white/15 px-5 py-4 min-w-[160px] backdrop-blur-sm">
+                  <p className="text-white/80 text-sm">Sedang Dipinjam</p>
+                  <p className="text-3xl font-extrabold">{activeBorrowings.length}</p>
+                </div>
               </div>
             </div>
 
@@ -650,8 +933,8 @@ export default function DashboardPublic() {
                 <div className="flex gap-3">
                   <div className="w-9 h-9 rounded-full bg-white text-blue-700 font-bold flex items-center justify-center shrink-0">4</div>
                   <div>
-                    <p className="font-semibold">Kirim pengembalian</p>
-                    <p className="text-sm text-white/80">Pilih barang dari semua data barang, lalu kirim form ke admin.</p>
+                    <p className="font-semibold">Pilih data pinjam saat return</p>
+                    <p className="text-sm text-white/80">Saat pengembalian, pilih barang sekaligus nama peminjam aktifnya.</p>
                   </div>
                 </div>
               </div>
@@ -804,324 +1087,338 @@ export default function DashboardPublic() {
                 return (
                   <div
                     key={item.id}
-                    className="group bg-white rounded-[26px] border border-slate-100 shadow-sm hover:shadow-xl transition-all overflow-hidden"
+                    className="group rounded-[28px] overflow-hidden bg-white border border-slate-200 shadow-sm hover:shadow-xl hover:-translate-y-1 transition-all duration-300"
                   >
-                    <div className="relative overflow-hidden">
+                    <div className="relative">
                       <img
                         src={item.image}
                         alt={item.name}
-                        className="w-full h-56 object-cover group-hover:scale-105 transition-transform duration-300"
+                        className="w-full h-52 object-cover"
                       />
-                      <div className="absolute top-4 right-4">
-                        <span
-                          className={`px-4 py-2 rounded-full text-xs font-bold shadow-sm ${
-                            available ? 'bg-emerald-500 text-white' : 'bg-rose-500 text-white'
-                          }`}
-                        >
-                          {available ? 'Tersedia' : 'Tidak Tersedia'}
+                      <div className="absolute inset-x-0 bottom-0 h-20 bg-gradient-to-t from-slate-900/40 via-slate-900/10 to-transparent"></div>
+
+                      <div className="absolute top-4 right-4 flex flex-wrap gap-2 justify-end">
+                        <span className="inline-flex items-center gap-1 rounded-full bg-white/90 px-3 py-1 text-xs font-bold text-slate-700 shadow-sm backdrop-blur">
+                          <Boxes size={13} />
+                          Stok {item.stock}
+                        </span>
+                        <span className={`inline-flex items-center gap-1 rounded-full px-3 py-1 text-xs font-bold shadow-sm ${conditionBadgeClass(item.condition)}`}>
+                          <BadgeCheck size={13} />
+                          {item.condition}
                         </span>
                       </div>
                     </div>
 
-                    <div className="p-5 space-y-3">
+                    <div className="p-5 sm:p-6">
                       <div className="flex items-start justify-between gap-3">
                         <div className="min-w-0">
-                          <h3 className="text-xl font-extrabold text-slate-800">
+                          <h3 className="text-2xl font-extrabold text-slate-800 leading-tight">
                             {item.name}
                           </h3>
-                          <p className="text-sm text-slate-500">{item.code}</p>
+                          <p className="mt-1 text-slate-400 font-medium">{item.code}</p>
                         </div>
 
-                        <span className="px-3 py-1 rounded-full bg-blue-50 text-blue-700 text-xs font-bold shrink-0">
-                          {item.category}
+                        <span className={`shrink-0 rounded-full px-3 py-1 text-xs font-bold ${
+                          selectedService === 'penyewaan'
+                            ? 'bg-violet-100 text-violet-700'
+                            : 'bg-blue-100 text-blue-700'
+                        }`}>
+                          {selectedService === 'penyewaan' ? 'Disewa' : 'Dipinjam'}
                         </span>
                       </div>
 
-                      <div className="grid grid-cols-2 gap-3 text-sm">
-                        <div className="rounded-2xl bg-slate-50 p-3">
-                          <p className="text-slate-500">Lokasi</p>
-                          <p className="font-semibold text-slate-800">{item.location}</p>
+                      <div className="mt-5 space-y-3 text-sm text-slate-600">
+                        <div className="flex items-center gap-2">
+                          <Boxes size={16} className="text-slate-400" />
+                          <span>{item.category}</span>
                         </div>
-                        <div className="rounded-2xl bg-slate-50 p-3">
-                          <p className="text-slate-500">Stok</p>
-                          <p className="font-semibold text-slate-800">{item.stock}</p>
+                        <div className="flex items-center gap-2">
+                          <MapPin size={16} className="text-slate-400" />
+                          <span>{item.location}</span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <Package size={16} className="text-slate-400" />
+                          <span>{serviceModeLabel(item.serviceMode)}</span>
                         </div>
                       </div>
 
-                      <div className="rounded-2xl bg-slate-50 p-3 text-sm">
-                        <p className="text-slate-500">Kondisi</p>
-                        <p className="font-semibold text-slate-800">{item.condition}</p>
-                      </div>
-
-                      <div className="pt-2">
-                        <button
-                          disabled={!available}
-                          onClick={() => openBorrowModal(item)}
-                          className={`w-full inline-flex items-center justify-center rounded-2xl px-4 py-3 font-semibold transition ${
-                            available
-                              ? selectedService === 'peminjaman'
-                                ? 'bg-blue-600 text-white hover:bg-blue-700'
-                                : 'bg-violet-600 text-white hover:bg-violet-700'
-                              : 'bg-slate-100 text-slate-400 cursor-not-allowed'
-                          }`}
-                        >
-                          {selectedService === 'peminjaman'
-                            ? 'Lanjutkan Peminjaman'
-                            : 'Lanjutkan Penyewaan'}
-                        </button>
-                      </div>
+                      <button
+                        onClick={() => openBorrowModal(item)}
+                        disabled={!available}
+                        className={`mt-6 w-full rounded-[18px] py-3.5 px-4 text-sm font-bold transition-all duration-300 ${
+                          available
+                            ? selectedService === 'penyewaan'
+                              ? 'bg-violet-600 hover:bg-violet-700 text-white shadow-lg shadow-violet-200'
+                              : 'bg-blue-600 hover:bg-blue-700 text-white shadow-lg shadow-blue-200'
+                            : 'bg-slate-100 text-slate-400 cursor-not-allowed'
+                        }`}
+                      >
+                        {selectedService === 'penyewaan' ? 'Lanjutkan Penyewaan' : 'Lanjutkan Peminjaman'}
+                      </button>
                     </div>
                   </div>
                 )
               })}
             </div>
           )}
-
-          {selectedService && filteredItemsByService.length === 0 && (
-            <div className="rounded-[24px] border border-dashed border-slate-300 bg-white p-10 text-center">
-              <p className="text-xl font-bold text-slate-700">
-                Belum ada barang untuk {selectedService === 'peminjaman' ? 'peminjaman' : 'penyewaan'}
-              </p>
-              <p className="text-slate-500 mt-2">
-                Silakan tambahkan atau ubah jenis layanan barang dari admin.
-              </p>
-            </div>
-          )}
         </section>
       </main>
 
-      {borrowModalOpen && (
-        <div className="fixed inset-0 z-50 bg-black/40 backdrop-blur-[2px] p-3 sm:p-4">
-          <div className="w-full h-full flex items-center justify-center">
-            <div className="w-full max-w-4xl bg-white rounded-[24px] sm:rounded-[28px] shadow-2xl border border-slate-100 overflow-hidden max-h-[94vh] flex flex-col">
-              <div className="px-4 sm:px-6 py-4 sm:py-5 border-b border-slate-100 flex items-start justify-between gap-4 shrink-0">
-                <div className="min-w-0">
-                  <h3 className="text-xl sm:text-2xl font-extrabold text-slate-800">
-                    Form {borrowForm.borrowType === 'penyewaan' ? 'Penyewaan' : 'Peminjaman'}
-                  </h3>
-                  <p className="text-sm text-slate-500 mt-1">
-                    Form otomatis menyesuaikan dengan layanan yang sudah dipilih.
-                  </p>
+      {borrowModalOpen && selectedItem && (
+        <div className="fixed inset-0 z-[90] bg-slate-950/45 backdrop-blur-sm px-4 py-4 sm:p-6 overflow-y-auto">
+          <div className="mx-auto w-full max-w-4xl">
+            <div className="rounded-[32px] overflow-hidden bg-white shadow-[0_30px_80px_rgba(15,23,42,0.24)] border border-slate-200">
+              <div className={`px-6 sm:px-8 py-5 border-b border-slate-100 ${
+                borrowForm.borrowType === 'penyewaan'
+                  ? 'bg-gradient-to-r from-violet-50 to-fuchsia-50'
+                  : 'bg-gradient-to-r from-blue-50 to-indigo-50'
+              }`}>
+                <div className="flex items-start justify-between gap-4">
+                  <div className="min-w-0">
+                    <p className={`inline-flex items-center gap-2 rounded-full px-3 py-1 text-xs font-bold ${
+                      borrowForm.borrowType === 'penyewaan'
+                        ? 'bg-violet-100 text-violet-700'
+                        : 'bg-blue-100 text-blue-700'
+                    }`}>
+                      {borrowForm.borrowType === 'penyewaan' ? <Wallet size={14} /> : <HandCoins size={14} />}
+                      {borrowForm.borrowType === 'penyewaan' ? 'Form Penyewaan' : 'Form Peminjaman'}
+                    </p>
+                    <h3 className="mt-3 text-2xl sm:text-3xl font-extrabold text-slate-800">
+                      {borrowForm.borrowType === 'penyewaan' ? 'Form Penyewaan' : 'Form Peminjaman'}
+                    </h3>
+                    <p className="text-slate-500 mt-1">
+                      Form otomatis menyesuaikan dengan layanan yang sudah dipilih.
+                    </p>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => setBorrowModalOpen(false)}
+                    className="w-12 h-12 rounded-2xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-500 flex items-center justify-center shrink-0"
+                  >
+                    <X size={20} />
+                  </button>
                 </div>
-                <button
-                  onClick={() => setBorrowModalOpen(false)}
-                  className="btn-icon shrink-0"
-                >
-                  ✕
-                </button>
               </div>
 
-              <div className="overflow-y-auto px-4 sm:px-6 py-5">
-                <form onSubmit={submitBorrow} className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="p-6 sm:p-8">
+                <form onSubmit={submitBorrow} className="space-y-6">
                   {borrowForm.borrowType === 'penyewaan' && (
-                    <div className="md:col-span-2 rounded-[24px] border border-violet-100 bg-violet-50 p-4 sm:p-5">
-                      <div className="flex items-center gap-2 mb-3">
-                        <QrCode size={20} className="text-violet-700" />
-                        <p className="font-bold text-violet-900">QRIS Penyewaan</p>
+                    <div className="rounded-[28px] border border-violet-200 bg-gradient-to-br from-violet-50 to-fuchsia-50 p-5 sm:p-6">
+                      <div className="flex items-center gap-2 text-violet-700 font-extrabold">
+                        <QrCode size={18} />
+                        QRIS Penyewaan
                       </div>
 
-                      {config?.rentalQrisImage || config?.rentalQrisLink ? (
-                        <div className="flex flex-col items-center gap-3">
-                          {config?.rentalQrisImage ? (
-                            <img
-                              src={config.rentalQrisImage}
-                              alt="QRIS Penyewaan"
-                              className="rounded-2xl border border-violet-200 bg-white p-3 w-[180px] h-[180px] sm:w-[220px] sm:h-[220px] object-contain"
-                            />
-                          ) : (
-                            <img
-                              src={`https://api.qrserver.com/v1/create-qr-code/?size=220x220&data=${encodeURIComponent(
-                                config.rentalQrisLink
-                              )}`}
-                              alt="QRIS Penyewaan"
-                              className="rounded-2xl border border-violet-200 bg-white p-3 w-[180px] h-[180px] sm:w-[220px] sm:h-[220px] object-contain"
-                            />
-                          )}
-
-                          {config?.rentalQrisLink && (
-                            <a
-                              href={config.rentalQrisLink}
-                              target="_blank"
-                              rel="noreferrer"
-                              className="text-sm text-violet-700 hover:underline break-all text-center"
+                      {!!getRentalQrisSrc() && (
+                        <div className="mt-4">
+                          <div className="mx-auto w-full max-w-[320px] rounded-[24px] border border-violet-200 bg-white p-4 shadow-sm">
+                            <button
+                              type="button"
+                              onClick={() => setQrisViewerOpen(true)}
+                              className="group block w-full"
                             >
-                              {config.rentalQrisLink}
-                            </a>
-                          )}
+                              <img
+                                src={getRentalQrisSrc()}
+                                alt="QRIS Penyewaan"
+                                className="mx-auto w-full max-w-[220px] rounded-[20px] border border-violet-200 shadow-sm transition duration-300 group-hover:scale-[1.02]"
+                              />
+                            </button>
 
-                          <p className="text-sm text-violet-800 text-center">
-                            Setelah submit, WhatsApp admin akan dibuka ke: <b>6282288277920</b>
+                            <div className="mt-4 flex items-center justify-center gap-2">
+                              <button
+                                type="button"
+                                onClick={() => setQrisViewerOpen(true)}
+                                className="inline-flex items-center gap-2 rounded-2xl border border-violet-200 bg-violet-50 px-4 py-2 text-sm font-bold text-violet-700 hover:bg-violet-100 transition"
+                              >
+                                <ZoomIn size={16} />
+                                Zoom / Pop Up
+                              </button>
+
+                              {config?.rentalQrisLink && (
+                                <a
+                                  href={config.rentalQrisLink}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  className="inline-flex items-center gap-2 rounded-2xl border border-slate-200 bg-white px-4 py-2 text-sm font-bold text-slate-700 hover:bg-slate-50 transition"
+                                >
+                                  <ExternalLink size={16} />
+                                  Buka Link
+                                </a>
+                              )}
+                            </div>
+                          </div>
+
+                          <p className="mt-4 text-center text-sm font-medium text-violet-700">
+                            Setelah submit, WhatsApp admin akan dibuka ke: <b>{config?.adminWhatsappNumber || '6282288277920'}</b>
                           </p>
                         </div>
-                      ) : (
-                        <p className="text-sm text-slate-500">
-                          QRIS penyewaan belum diatur admin.
-                        </p>
                       )}
                     </div>
                   )}
 
-                  <div className="md:col-span-2">
-                    <label className="text-sm text-slate-600">Barang</label>
+                  <div className="space-y-2">
+                    <label className="text-sm font-semibold text-slate-600">Barang</label>
                     <input
-                      className="input"
+                      type="text"
                       value={selectedItem?.name || ''}
-                      disabled
+                      readOnly
+                      className="w-full rounded-[18px] border border-slate-200 bg-slate-50 px-4 py-3.5 text-slate-700 outline-none"
                     />
                   </div>
 
-                  <div>
-                    <label className="text-sm text-slate-600">Nama Lengkap</label>
-                    <input
-                      className="input"
-                      value={borrowForm.borrowerName}
-                      onChange={e =>
-                        setBorrowForm(prev => ({ ...prev, borrowerName: e.target.value }))
-                      }
-                    />
-                  </div>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <label className="text-sm font-semibold text-slate-600">Nama Lengkap</label>
+                      <input
+                        type="text"
+                        value={borrowForm.borrowerName}
+                        onChange={e => setBorrowForm(prev => ({ ...prev, borrowerName: e.target.value }))}
+                        className="w-full rounded-[18px] border border-slate-200 px-4 py-3.5 outline-none focus:border-blue-300 focus:ring-4 focus:ring-blue-100"
+                        placeholder="Masukkan nama lengkap"
+                      />
+                    </div>
 
-                  <div>
-                    <label className="text-sm text-slate-600">No. HP</label>
-                    <input
-                      className="input"
-                      value={borrowForm.borrowerPhone}
-                      onChange={e =>
-                        setBorrowForm(prev => ({ ...prev, borrowerPhone: e.target.value }))
-                      }
-                    />
-                  </div>
-
-                  <div className="md:col-span-2">
-                    <label className="text-sm text-slate-600">Alamat</label>
-                    <input
-                      className="input"
-                      value={borrowForm.borrowerAddress}
-                      onChange={e =>
-                        setBorrowForm(prev => ({ ...prev, borrowerAddress: e.target.value }))
-                      }
-                    />
-                  </div>
-
-                  <div>
-                    <label className="text-sm text-slate-600">Jumlah</label>
-                    <input
-                      type="number"
-                      min={1}
-                      className="input"
-                      value={borrowForm.quantity}
-                      onChange={e =>
-                        setBorrowForm(prev => ({ ...prev, quantity: +e.target.value }))
-                      }
-                    />
-                  </div>
-
-                  <div className="flex items-end">
-                    <div className="w-full rounded-2xl border border-blue-100 bg-blue-50 px-4 py-3 text-blue-800 text-sm font-medium flex items-center gap-2">
-                      <CalendarDays size={16} />
-                      Lengkapi tanggal pinjam dan tanggal kembali
+                    <div className="space-y-2">
+                      <label className="text-sm font-semibold text-slate-600">No. HP</label>
+                      <input
+                        type="text"
+                        value={borrowForm.borrowerPhone}
+                        onChange={e => setBorrowForm(prev => ({ ...prev, borrowerPhone: e.target.value }))}
+                        className="w-full rounded-[18px] border border-slate-200 px-4 py-3.5 outline-none focus:border-blue-300 focus:ring-4 focus:ring-blue-100"
+                        placeholder="Masukkan nomor HP"
+                      />
                     </div>
                   </div>
 
-                  <div>
-                    <label className="text-sm text-slate-600">Tanggal Peminjaman / Penyewaan</label>
+                  <div className="space-y-2">
+                    <label className="text-sm font-semibold text-slate-600">Alamat</label>
                     <input
-                      type="date"
-                      className="input"
-                      value={borrowForm.borrowDate}
-                      onChange={e =>
-                        setBorrowForm(prev => ({ ...prev, borrowDate: e.target.value }))
-                      }
+                      type="text"
+                      value={borrowForm.borrowerAddress}
+                      onChange={e => setBorrowForm(prev => ({ ...prev, borrowerAddress: e.target.value }))}
+                      className="w-full rounded-[18px] border border-slate-200 px-4 py-3.5 outline-none focus:border-blue-300 focus:ring-4 focus:ring-blue-100"
+                      placeholder="Masukkan alamat"
                     />
                   </div>
 
-                  <div>
-                    <label className="text-sm text-slate-600">Tanggal Pengembalian</label>
-                    <input
-                      type="date"
-                      className="input"
-                      value={borrowForm.expectedReturn}
-                      min={borrowForm.borrowDate || todayISO()}
-                      onChange={e =>
-                        setBorrowForm(prev => ({ ...prev, expectedReturn: e.target.value }))
-                      }
-                    />
+                  <div className="grid grid-cols-1 md:grid-cols-[1fr_1fr] gap-4 items-end">
+                    <div className="space-y-2">
+                      <label className="text-sm font-semibold text-slate-600">Jumlah</label>
+                      <input
+                        type="number"
+                        min="1"
+                        value={borrowForm.quantity}
+                        onChange={e => setBorrowForm(prev => ({ ...prev, quantity: e.target.value }))}
+                        className="w-full rounded-[18px] border border-slate-200 px-4 py-3.5 outline-none focus:border-blue-300 focus:ring-4 focus:ring-blue-100"
+                      />
+                    </div>
+
+                    <div className={`rounded-[18px] border px-4 py-3.5 text-sm font-semibold ${
+                      borrowForm.borrowType === 'penyewaan'
+                        ? 'border-violet-200 bg-violet-50 text-violet-700'
+                        : 'border-blue-200 bg-blue-50 text-blue-700'
+                    }`}>
+                      <div className="flex items-center gap-2">
+                        <CalendarDays size={16} />
+                        Lengkapi tanggal pinjam dan tanggal kembali
+                      </div>
+                    </div>
                   </div>
 
-                  <div className="md:col-span-2">
-                    <label className="text-sm text-slate-600">Keperluan</label>
-                    <input
-                      className="input"
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <label className="text-sm font-semibold text-slate-600">
+                        Tanggal Peminjaman / Penyewaan
+                      </label>
+                      <input
+                        type="date"
+                        value={borrowForm.borrowDate}
+                        onChange={e => setBorrowForm(prev => ({ ...prev, borrowDate: e.target.value }))}
+                        className="w-full rounded-[18px] border border-slate-200 px-4 py-3.5 outline-none focus:border-blue-300 focus:ring-4 focus:ring-blue-100"
+                      />
+                    </div>
+
+                    <div className="space-y-2">
+                      <label className="text-sm font-semibold text-slate-600">Tanggal Pengembalian</label>
+                      <input
+                        type="date"
+                        value={borrowForm.expectedReturn}
+                        onChange={e => setBorrowForm(prev => ({ ...prev, expectedReturn: e.target.value }))}
+                        className="w-full rounded-[18px] border border-slate-200 px-4 py-3.5 outline-none focus:border-blue-300 focus:ring-4 focus:ring-blue-100"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="space-y-2">
+                    <label className="text-sm font-semibold text-slate-600">Keperluan / Catatan</label>
+                    <textarea
+                      rows="4"
                       value={borrowForm.notes}
-                      onChange={e =>
-                        setBorrowForm(prev => ({ ...prev, notes: e.target.value }))
-                      }
+                      onChange={e => setBorrowForm(prev => ({ ...prev, notes: e.target.value }))}
+                      className="w-full rounded-[18px] border border-slate-200 px-4 py-3.5 outline-none focus:border-blue-300 focus:ring-4 focus:ring-blue-100 resize-none"
+                      placeholder="Tulis keperluan penggunaan barang"
                     />
                   </div>
 
                   {borrowForm.borrowType === 'penyewaan' && (
-                    <>
-                      <div className="md:col-span-2">
-                        <label className="text-sm text-slate-600 mb-2 block">
-                          Bukti Pembayaran
+                    <div className="rounded-[24px] border border-dashed border-violet-300 bg-violet-50/70 p-5">
+                      <label className="block text-sm font-extrabold text-violet-700">
+                        Upload Bukti Pembayaran
+                      </label>
+
+                      <div className="mt-4 flex flex-col sm:flex-row sm:items-center gap-4">
+                        <label className="inline-flex items-center justify-center gap-2 rounded-[18px] bg-violet-600 text-white px-5 py-3 font-bold cursor-pointer hover:bg-violet-700 transition">
+                          <Upload size={18} />
+                          Pilih gambar bukti
+                          <input
+                            type="file"
+                            accept="image/*"
+                            className="hidden"
+                            onChange={e => handlePaymentImage(e.target.files?.[0])}
+                          />
                         </label>
 
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                          <label className="w-full">
-                            <input
-                              type="file"
-                              accept="image/*"
-                              className="hidden"
-                              onChange={e => handlePaymentImage(e.target.files?.[0])}
-                            />
-                            <div className="input cursor-pointer text-slate-600 flex items-center gap-2">
-                              <Upload size={16} />
-                              Upload bukti pembayaran
-                            </div>
-                          </label>
-
-                          <label className="w-full">
-                            <input
-                              type="file"
-                              accept="image/*"
-                              capture="environment"
-                              className="hidden"
-                              onChange={e => handlePaymentImage(e.target.files?.[0])}
-                            />
-                            <div className="input cursor-pointer text-slate-600 flex items-center gap-2">
-                              <Camera size={16} />
-                              Foto langsung bukti
-                            </div>
-                          </label>
+                        <div className="min-w-0">
+                          <p className="text-sm text-violet-700 font-semibold break-all">
+                            {paymentPreviewName || 'Belum ada file dipilih'}
+                          </p>
+                          <p className="text-xs text-violet-500 mt-1">
+                            Gambar akan dioptimalkan otomatis agar submit lebih stabil.
+                          </p>
                         </div>
-
-                        <p className="text-xs text-slate-500 mt-2">
-                          {paymentPreviewName || 'Belum ada bukti pembayaran dipilih'}
-                        </p>
                       </div>
 
-                      {borrowForm.paymentProof && (
-                        <div className="md:col-span-2">
+                      {!!borrowForm.paymentProof && (
+                        <div className="mt-4">
                           <img
                             src={borrowForm.paymentProof}
-                            alt="Bukti Pembayaran"
-                            className="w-full h-56 object-cover rounded-[22px] border border-slate-200"
+                            alt="Preview bukti pembayaran"
+                            className="w-full max-w-xs rounded-[20px] border border-violet-200 bg-white shadow-sm"
                           />
                         </div>
                       )}
-                    </>
+                    </div>
                   )}
 
-                  <div className="md:col-span-2 flex flex-col-reverse sm:flex-row justify-end gap-3 pt-2">
+                  <div className="flex flex-col sm:flex-row gap-3 pt-2">
                     <button
                       type="button"
-                      className="btn-secondary justify-center"
                       onClick={() => setBorrowModalOpen(false)}
+                      className="w-full sm:w-auto rounded-[18px] border border-slate-200 bg-white px-6 py-3.5 font-bold text-slate-700 hover:bg-slate-50 transition"
                     >
                       Batal
                     </button>
-                    <button className="btn-primary justify-center">
-                      Kirim {borrowForm.borrowType === 'penyewaan' ? 'Penyewaan' : 'Peminjaman'}
+
+                    <button
+                      type="submit"
+                      className={`w-full sm:flex-1 rounded-[18px] px-6 py-3.5 font-bold text-white transition ${
+                        borrowForm.borrowType === 'penyewaan'
+                          ? 'bg-violet-600 hover:bg-violet-700 shadow-lg shadow-violet-200'
+                          : 'bg-blue-600 hover:bg-blue-700 shadow-lg shadow-blue-200'
+                      }`}
+                    >
+                      {borrowForm.borrowType === 'penyewaan' ? 'Kirim Form Penyewaan' : 'Kirim Form Peminjaman'}
                     </button>
                   </div>
                 </form>
@@ -1132,277 +1429,230 @@ export default function DashboardPublic() {
       )}
 
       {returnModalOpen && (
-        <div className="fixed inset-0 z-50 bg-black/40 backdrop-blur-[2px] p-3 sm:p-4">
-          <div className="w-full h-full flex items-center justify-center">
-            <div className="w-full max-w-4xl bg-white rounded-[24px] sm:rounded-[28px] shadow-2xl border border-slate-100 overflow-hidden max-h-[94vh] flex flex-col">
-              <div className="px-4 sm:px-6 py-4 sm:py-5 border-b border-slate-100 flex items-start justify-between gap-4 shrink-0">
-                <div className="min-w-0">
-                  <h3 className="text-xl sm:text-2xl font-extrabold text-slate-800">
-                    Form Pengembalian
-                  </h3>
-                  <p className="text-sm text-slate-500 mt-1">
-                    Semua barang ditampilkan. Pilih barang yang ingin dikembalikan dengan tampilan yang lebih lengkap.
-                  </p>
+        <div className="fixed inset-0 z-[90] bg-slate-950/45 backdrop-blur-sm px-4 py-4 sm:p-6 overflow-y-auto">
+          <div className="mx-auto w-full max-w-4xl">
+            <div className="rounded-[32px] overflow-hidden bg-white shadow-[0_30px_80px_rgba(15,23,42,0.24)] border border-slate-200">
+              <div className="px-6 sm:px-8 py-5 border-b border-slate-100 bg-gradient-to-r from-blue-50 to-indigo-50">
+                <div className="flex items-start justify-between gap-4">
+                  <div className="min-w-0">
+                    <p className="inline-flex items-center gap-2 rounded-full px-3 py-1 text-xs font-bold bg-blue-100 text-blue-700">
+                      <RotateCcw size={14} />
+                      Form Pengembalian
+                    </p>
+                    <h3 className="mt-3 text-2xl sm:text-3xl font-extrabold text-slate-800">
+                      Form Pengembalian
+                    </h3>
+                    <p className="text-slate-500 mt-1">
+                      Pilih barang dan peminjam aktif yang ingin dikembalikan.
+                    </p>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => setReturnModalOpen(false)}
+                    className="w-12 h-12 rounded-2xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-500 flex items-center justify-center shrink-0"
+                  >
+                    <X size={20} />
+                  </button>
                 </div>
-                <button
-                  onClick={() => setReturnModalOpen(false)}
-                  className="btn-icon shrink-0"
-                >
-                  ✕
-                </button>
               </div>
 
-              <div className="overflow-y-auto px-4 sm:px-6 py-5">
-                <form onSubmit={submitReturn} className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div className="md:col-span-2" ref={returnPickerRef}>
-                    <label className="text-sm text-slate-600 font-medium">
-                      Pilih Barang yang Ingin Dikembalikan
+              <div className="p-6 sm:p-8">
+                <form onSubmit={submitReturn} className="space-y-6">
+                  <div className="space-y-2" ref={returnPickerRef}>
+                    <label className="text-sm font-semibold text-slate-600">
+                      Cari barang / peminjam aktif
                     </label>
 
-                    <div className="relative mt-2">
-                      <div
-                        className={`flex items-center gap-3 rounded-2xl border px-4 py-3 bg-white shadow-sm transition ${
-                          returnDropdownOpen
-                            ? 'border-blue-400 ring-4 ring-blue-500/15'
-                            : 'border-gray-200'
-                        }`}
+                    <div className="relative">
+                      <Search size={18} className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" />
+                      <input
+                        type="text"
+                        value={returnSearch}
+                        onChange={e => {
+                          setReturnSearch(e.target.value)
+                          setReturnDropdownOpen(true)
+                        }}
+                        onFocus={() => setReturnDropdownOpen(true)}
+                        className="w-full rounded-[18px] border border-slate-200 pl-12 pr-12 py-3.5 outline-none focus:border-blue-300 focus:ring-4 focus:ring-blue-100"
+                        placeholder="Cari nama barang, kode, nama peminjam, atau nomor HP"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setReturnDropdownOpen(prev => !prev)}
+                        className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400"
                       >
-                        <div className="w-10 h-10 rounded-xl bg-slate-100 flex items-center justify-center shrink-0">
-                          <Search size={17} className="text-slate-500" />
-                        </div>
-
-                        <input
-                          className="flex-1 outline-none bg-transparent text-slate-700 min-w-0"
-                          placeholder="Cari berdasarkan nama barang, kode, kategori, atau lokasi..."
-                          value={returnSearch}
-                          onChange={e => {
-                            setReturnSearch(e.target.value)
-                            setReturnDropdownOpen(true)
-                            setReturnForm(prev => ({ ...prev, itemId: '' }))
-                          }}
-                          onFocus={() => setReturnDropdownOpen(true)}
-                        />
-
-                        <button
-                          type="button"
-                          onClick={() => setReturnDropdownOpen(v => !v)}
-                          className="w-10 h-10 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-600 flex items-center justify-center shrink-0 transition"
-                        >
-                          <ChevronDown size={18} />
-                        </button>
-                      </div>
-
-                      {returnDropdownOpen && (
-                        <div className="absolute left-0 right-0 top-[calc(100%+10px)] z-20 rounded-[24px] border border-slate-200 bg-white shadow-2xl overflow-hidden">
-                          <div className="px-4 py-3 border-b border-slate-100 bg-slate-50">
-                            <p className="text-sm font-semibold text-slate-700">
-                              Pilih barang dari daftar berikut
-                            </p>
-                            <p className="text-xs text-slate-500 mt-1">
-                              Menampilkan {filteredReturnItems.length} barang
-                            </p>
-                          </div>
-
-                          <div className="max-h-[360px] overflow-auto p-3 space-y-3">
-                            {filteredReturnItems.length === 0 && (
-                              <div className="px-4 py-8 text-sm text-slate-500 text-center">
-                                Barang tidak ditemukan
-                              </div>
-                            )}
-
-                            {filteredReturnItems.map(item => (
-                              <button
-                                key={item.id}
-                                type="button"
-                                onClick={() => handleSelectReturnItem(item)}
-                                className="w-full text-left rounded-[22px] border border-slate-200 hover:border-blue-300 hover:bg-blue-50/50 transition p-3"
-                              >
-                                <div className="flex items-start gap-4">
-                                  <img
-                                    src={item.image}
-                                    alt={item.name}
-                                    className="w-20 h-20 rounded-2xl object-cover border border-slate-200 shrink-0"
-                                  />
-
-                                  <div className="flex-1 min-w-0">
-                                    <div className="flex flex-wrap items-start justify-between gap-2">
-                                      <div className="min-w-0">
-                                        <p className="font-extrabold text-slate-800 truncate">
-                                          {item.name}
-                                        </p>
-                                        <p className="text-sm text-slate-500">
-                                          {item.code}
-                                        </p>
-                                      </div>
-
-                                      <span className="px-3 py-1 rounded-full bg-blue-100 text-blue-700 text-xs font-bold shrink-0">
-                                        {item.category}
-                                      </span>
-                                    </div>
-
-                                    <div className="mt-3 grid grid-cols-1 sm:grid-cols-3 gap-2 text-xs">
-                                      <div className="rounded-xl bg-slate-50 px-3 py-2 text-slate-600 flex items-center gap-2">
-                                        <MapPin size={13} />
-                                        <span className="truncate">{item.location}</span>
-                                      </div>
-
-                                      <div className="rounded-xl bg-slate-50 px-3 py-2 text-slate-600 flex items-center gap-2">
-                                        <Boxes size={13} />
-                                        <span>Stok: {item.stock}</span>
-                                      </div>
-
-                                      <div
-                                        className={`rounded-xl px-3 py-2 flex items-center gap-2 font-medium ${conditionBadgeClass(item.condition)}`}
-                                      >
-                                        <BadgeCheck size={13} />
-                                        <span>{item.condition}</span>
-                                      </div>
-                                    </div>
-
-                                    <div className="mt-3">
-                                      <span className="inline-flex items-center rounded-full px-3 py-1 bg-slate-100 text-slate-700 text-xs font-semibold">
-                                        {serviceModeLabel(item.serviceMode || 'both')}
-                                      </span>
-                                    </div>
-                                  </div>
-                                </div>
-                              </button>
-                            ))}
-                          </div>
-                        </div>
-                      )}
+                        <ChevronDown size={18} />
+                      </button>
                     </div>
 
-                    {selectedReturnItem && (
-                      <div className="mt-4 rounded-[24px] border border-blue-200 bg-gradient-to-br from-blue-50 to-indigo-50 p-4 shadow-sm">
-                        <div className="flex items-start gap-4">
-                          <img
-                            src={selectedReturnItem.image}
-                            alt={selectedReturnItem.name}
-                            className="w-24 h-24 rounded-2xl object-cover border border-blue-200 shrink-0"
-                          />
+                    {returnDropdownOpen && (
+                      <div className="mt-3 max-h-80 overflow-auto rounded-[22px] border border-slate-200 bg-white shadow-xl">
+                        {filteredReturnRows.length > 0 ? (
+                          filteredReturnRows.map(row => (
+                            <button
+                              key={row.borrowingId}
+                              type="button"
+                              onClick={() => handleSelectReturnRow(row)}
+                              className="w-full px-4 py-4 text-left hover:bg-blue-50 transition border-b last:border-b-0 border-slate-100"
+                            >
+                              <div className="flex items-start gap-4">
+                                <img
+                                  src={row.itemImage}
+                                  alt={row.itemName}
+                                  className="w-16 h-16 rounded-2xl object-cover border border-slate-200 shrink-0"
+                                />
 
-                          <div className="flex-1 min-w-0">
-                            <div className="flex flex-wrap items-start justify-between gap-3">
-                              <div className="min-w-0">
-                                <p className="text-xl font-extrabold text-slate-800">
-                                  {selectedReturnItem.name}
-                                </p>
-                                <p className="text-sm text-slate-500">
-                                  {selectedReturnItem.code}
-                                </p>
+                                <div className="min-w-0 flex-1">
+                                  <div className="flex flex-wrap items-center gap-2">
+                                    <p className="font-extrabold text-slate-800">{row.itemName}</p>
+                                    <span className={`rounded-full px-2.5 py-1 text-[11px] font-bold ${
+                                      row.borrowType === 'penyewaan'
+                                        ? 'bg-violet-100 text-violet-700'
+                                        : 'bg-blue-100 text-blue-700'
+                                    }`}>
+                                      {borrowTypeLabel(row.borrowType)}
+                                    </span>
+                                  </div>
+
+                                  <p className="text-sm text-slate-500 mt-1">
+                                    {row.itemCode} • {row.itemCategory} • {row.itemLocation}
+                                  </p>
+
+                                  <div className="mt-2 flex flex-wrap gap-3 text-sm text-slate-600">
+                                    <span className="inline-flex items-center gap-1">
+                                      <UserRound size={14} />
+                                      {row.borrowerName}
+                                    </span>
+                                    <span className="inline-flex items-center gap-1">
+                                      <Phone size={14} />
+                                      {row.borrowerPhone}
+                                    </span>
+                                  </div>
+                                </div>
                               </div>
-
-                              <span className="px-3 py-1 rounded-full bg-white text-blue-700 text-xs font-bold border border-blue-200">
-                                {selectedReturnItem.category}
-                              </span>
-                            </div>
-
-                            <div className="mt-4 grid grid-cols-1 sm:grid-cols-3 gap-3 text-sm">
-                              <div className="rounded-2xl bg-white/80 p-3 border border-blue-100">
-                                <p className="text-slate-500">Lokasi</p>
-                                <p className="font-semibold text-slate-800">
-                                  {selectedReturnItem.location}
-                                </p>
-                              </div>
-
-                              <div className="rounded-2xl bg-white/80 p-3 border border-blue-100">
-                                <p className="text-slate-500">Stok</p>
-                                <p className="font-semibold text-slate-800">
-                                  {selectedReturnItem.stock}
-                                </p>
-                              </div>
-
-                              <div className="rounded-2xl bg-white/80 p-3 border border-blue-100">
-                                <p className="text-slate-500">Kondisi</p>
-                                <p className="font-semibold text-slate-800">
-                                  {selectedReturnItem.condition}
-                                </p>
-                              </div>
-                            </div>
-
-                            <div className="mt-3">
-                              <span className="inline-flex items-center rounded-full px-3 py-1 bg-white text-slate-700 text-xs font-semibold border border-blue-200">
-                                {serviceModeLabel(selectedReturnItem.serviceMode || 'both')}
-                              </span>
-                            </div>
+                            </button>
+                          ))
+                        ) : (
+                          <div className="px-4 py-6 text-center text-slate-500">
+                            Data peminjaman aktif tidak ditemukan.
                           </div>
-                        </div>
+                        )}
                       </div>
                     )}
                   </div>
 
-                  <div>
-                    <label className="text-sm text-slate-600">Nama Pengembali</label>
-                    <input
-                      className="input"
-                      value={returnForm.returnerName}
-                      onChange={e =>
-                        setReturnForm(prev => ({ ...prev, returnerName: e.target.value }))
-                      }
-                    />
+                  {selectedReturnRow && (
+                    <div className="rounded-[24px] border border-blue-200 bg-gradient-to-br from-blue-50 to-indigo-50 p-4 shadow-sm">
+                      <div className="flex items-start gap-4">
+                        <img
+                          src={selectedReturnRow.itemImage}
+                          alt={selectedReturnRow.itemName}
+                          className="w-24 h-24 rounded-2xl object-cover border border-blue-200 shrink-0"
+                        />
+
+                        <div className="flex-1 min-w-0">
+                          <div className="flex flex-wrap items-start justify-between gap-3">
+                            <div className="min-w-0">
+                              <p className="text-xl font-extrabold text-slate-800">
+                                {selectedReturnRow.itemName}
+                              </p>
+                              <p className="text-sm text-slate-500">
+                                {selectedReturnRow.itemCode}
+                              </p>
+                            </div>
+
+                            <span className={`rounded-full px-3 py-1 text-xs font-bold ${
+                              selectedReturnRow.borrowType === 'penyewaan'
+                                ? 'bg-violet-100 text-violet-700'
+                                : 'bg-blue-100 text-blue-700'
+                            }`}>
+                              {borrowTypeLabel(selectedReturnRow.borrowType)}
+                            </span>
+                          </div>
+
+                          <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm text-slate-600">
+                            <div>
+                              <p className="font-semibold text-slate-700">Peminjam</p>
+                              <p>{selectedReturnRow.borrowerName}</p>
+                            </div>
+                            <div>
+                              <p className="font-semibold text-slate-700">No. HP</p>
+                              <p>{selectedReturnRow.borrowerPhone}</p>
+                            </div>
+                            <div>
+                              <p className="font-semibold text-slate-700">Tanggal Pinjam</p>
+                              <p>{selectedReturnRow.borrowDate || '-'}</p>
+                            </div>
+                            <div>
+                              <p className="font-semibold text-slate-700">Rencana Kembali</p>
+                              <p>{selectedReturnRow.expectedReturn || '-'}</p>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <label className="text-sm font-semibold text-slate-600">Nama Pengembali</label>
+                      <input
+                        type="text"
+                        value={returnForm.returnerName}
+                        onChange={e => setReturnForm(prev => ({ ...prev, returnerName: e.target.value }))}
+                        className="w-full rounded-[18px] border border-slate-200 px-4 py-3.5 outline-none focus:border-blue-300 focus:ring-4 focus:ring-blue-100"
+                        placeholder="Masukkan nama pengembali"
+                      />
+                    </div>
+
+                    <div className="space-y-2">
+                      <label className="text-sm font-semibold text-slate-600">No. HP</label>
+                      <input
+                        type="text"
+                        value={returnForm.returnerPhone}
+                        onChange={e => setReturnForm(prev => ({ ...prev, returnerPhone: e.target.value }))}
+                        className="w-full rounded-[18px] border border-slate-200 px-4 py-3.5 outline-none focus:border-blue-300 focus:ring-4 focus:ring-blue-100"
+                        placeholder="Masukkan nomor HP"
+                      />
+                    </div>
                   </div>
 
-                  <div>
-                    <label className="text-sm text-slate-600">No. HP</label>
-                    <input
-                      className="input"
-                      value={returnForm.returnerPhone}
-                      onChange={e =>
-                        setReturnForm(prev => ({ ...prev, returnerPhone: e.target.value }))
-                      }
-                    />
+                  <div className="grid grid-cols-1 md:grid-cols-[220px_1fr] gap-4">
+                    <div className="space-y-2">
+                      <label className="text-sm font-semibold text-slate-600">Kondisi</label>
+                      <select
+                        value={returnForm.conditionOnReturn}
+                        onChange={e => setReturnForm(prev => ({ ...prev, conditionOnReturn: e.target.value }))}
+                        className="w-full rounded-[18px] border border-slate-200 px-4 py-3.5 outline-none focus:border-blue-300 focus:ring-4 focus:ring-blue-100"
+                      >
+                        <option value="Baik">Baik</option>
+                        <option value="Kurang Baik">Kurang Baik</option>
+                        <option value="Rusak">Rusak</option>
+                      </select>
+                    </div>
+
+                    <div className="space-y-2">
+                      <label className="text-sm font-semibold text-slate-600">Catatan Pengembalian</label>
+                      <textarea
+                        rows="4"
+                        value={returnForm.returnNotes}
+                        onChange={e => setReturnForm(prev => ({ ...prev, returnNotes: e.target.value }))}
+                        className="w-full rounded-[18px] border border-slate-200 px-4 py-3.5 outline-none focus:border-blue-300 focus:ring-4 focus:ring-blue-100 resize-none"
+                        placeholder="Tulis catatan kondisi barang saat dikembalikan"
+                      />
+                    </div>
                   </div>
 
-                  <div className="md:col-span-2">
-                    <label className="text-sm text-slate-600">Kondisi Barang</label>
-                    <select
-                      className="input"
-                      value={returnForm.conditionOnReturn}
-                      onChange={e =>
-                        setReturnForm(prev => ({
-                          ...prev,
-                          conditionOnReturn: e.target.value
-                        }))
-                      }
-                    >
-                      <option value="Baik">Baik</option>
-                      <option value="Kurang Baik">Kurang Baik</option>
-                      <option value="Perlu Pemeriksaan">Perlu Pemeriksaan</option>
-                    </select>
-                  </div>
-
-                  <div className="md:col-span-2">
-                    <label className="text-sm text-slate-600">Catatan Pengembalian</label>
-                    <input
-                      className="input"
-                      value={returnForm.returnNotes}
-                      onChange={e =>
-                        setReturnForm(prev => ({ ...prev, returnNotes: e.target.value }))
-                      }
-                    />
-                  </div>
-
-                  <div className="md:col-span-2">
-                    <label className="text-sm text-slate-600 mb-2 block">
-                      Foto Barang yang Dikembalikan
+                  <div className="rounded-[24px] border border-dashed border-blue-300 bg-blue-50/70 p-5">
+                    <label className="block text-sm font-extrabold text-blue-700">
+                      Upload Foto Barang yang Dikembalikan
                     </label>
 
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                      <label className="w-full">
-                        <input
-                          type="file"
-                          accept="image/*"
-                          className="hidden"
-                          onChange={e => handleReturnImage(e.target.files?.[0])}
-                        />
-                        <div className="input cursor-pointer text-slate-600 flex items-center gap-2">
-                          <Upload size={16} />
-                          Upload foto barang
-                        </div>
-                      </label>
-
-                      <label className="w-full">
+                    <div className="mt-4 flex flex-col sm:flex-row sm:items-center gap-4">
+                      <label className="inline-flex items-center justify-center gap-2 rounded-[18px] bg-blue-600 text-white px-5 py-3 font-bold cursor-pointer hover:bg-blue-700 transition">
+                        <Camera size={18} />
+                        Ambil / pilih foto
                         <input
                           type="file"
                           accept="image/*"
@@ -1410,42 +1660,43 @@ export default function DashboardPublic() {
                           className="hidden"
                           onChange={e => handleReturnImage(e.target.files?.[0])}
                         />
-                        <div className="input cursor-pointer text-slate-600 flex items-center gap-2">
-                          <Camera size={16} />
-                          Foto langsung
-                        </div>
                       </label>
+
+                      <div className="min-w-0">
+                        <p className="text-sm text-blue-700 font-semibold break-all">
+                          {returnPreviewName || 'Belum ada foto dipilih'}
+                        </p>
+                        <p className="text-xs text-blue-500 mt-1">
+                          Foto akan dioptimalkan otomatis agar submit lebih stabil.
+                        </p>
+                      </div>
                     </div>
 
-                    <p className="text-xs text-slate-500 mt-2">
-                      {returnPreviewName || 'Belum ada foto dipilih'}
-                    </p>
+                    {!!returnForm.returnPhoto && (
+                      <div className="mt-4">
+                        <img
+                          src={returnForm.returnPhoto}
+                          alt="Preview foto pengembalian"
+                          className="w-full max-w-xs rounded-[20px] border border-blue-200 bg-white shadow-sm"
+                        />
+                      </div>
+                    )}
                   </div>
 
-                  {returnForm.returnPhoto && (
-                    <div className="md:col-span-2">
-                      <img
-                        src={returnForm.returnPhoto}
-                        alt="Foto Pengembalian"
-                        className="w-full h-56 object-cover rounded-[22px] border border-slate-200"
-                      />
-                    </div>
-                  )}
-
-                  <div className="md:col-span-2 flex flex-col-reverse sm:flex-row justify-end gap-3 pt-2">
+                  <div className="flex flex-col sm:flex-row gap-3 pt-2">
                     <button
                       type="button"
-                      className="btn-secondary justify-center"
-                      onClick={() => {
-                        setReturnModalOpen(false)
-                        setReturnSearch('')
-                        setReturnDropdownOpen(false)
-                      }}
+                      onClick={() => setReturnModalOpen(false)}
+                      className="w-full sm:w-auto rounded-[18px] border border-slate-200 bg-white px-6 py-3.5 font-bold text-slate-700 hover:bg-slate-50 transition"
                     >
                       Batal
                     </button>
-                    <button className="btn-primary justify-center">
-                      Kirim Pengembalian
+
+                    <button
+                      type="submit"
+                      className="w-full sm:flex-1 rounded-[18px] bg-blue-600 hover:bg-blue-700 px-6 py-3.5 font-bold text-white shadow-lg shadow-blue-200 transition"
+                    >
+                      Kirim Form Pengembalian
                     </button>
                   </div>
                 </form>
@@ -1454,6 +1705,41 @@ export default function DashboardPublic() {
           </div>
         </div>
       )}
+
+      <style>{`
+        .btn-primary {
+          display: inline-flex;
+          align-items: center;
+          gap: .6rem;
+          background: linear-gradient(135deg, #2563eb, #4f46e5);
+          color: white;
+          border-radius: 18px;
+          padding: .9rem 1.2rem;
+          font-weight: 800;
+          box-shadow: 0 10px 30px rgba(59, 130, 246, .18);
+        }
+
+        .btn-primary:hover {
+          filter: brightness(.98);
+        }
+
+        .btn-secondary {
+          display: inline-flex;
+          align-items: center;
+          gap: .6rem;
+          background: white;
+          color: #334155;
+          border: 1px solid #e2e8f0;
+          border-radius: 18px;
+          padding: .9rem 1.2rem;
+          font-weight: 800;
+          box-shadow: 0 10px 30px rgba(15, 23, 42, .05);
+        }
+
+        .btn-secondary:hover {
+          background: #f8fafc;
+        }
+      `}</style>
     </div>
   )
 }

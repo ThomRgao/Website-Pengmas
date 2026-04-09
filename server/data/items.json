@@ -4,7 +4,7 @@
     "name": "Laptop Ngawi",
     "code": "LPT-001",
     "category": "Elektronik",
-    "stock": 4,
+    "stock": 2,
     "minStock": 2,
     "condition": "Baik",
     "location": "Gudang A",
@@ -17,7 +17,7 @@
     "name": "Proyektor Amba",
     "code": "PRJ-001",
     "category": "Elektronik",
-    "stock": 2,
+    "stock": 1,
     "minStock": 1,
     "condition": "Baik",
     "location": "Gudang B",
@@ -89,5 +89,18 @@
     "price": 150000,
     "image": "https://www.kantorku.co.id/cdn/shop/files/GA_28_U7_ERGOTEC_2004GA28U7EGTCOSCRXXXBLCK_DSC_9019_23_PKP.jpg?v=1757418917",
     "serviceMode": "rent"
+  },
+  {
+    "id": 8,
+    "name": "Kabel",
+    "code": "Kbl-001",
+    "category": "elektronik",
+    "location": "Gedung A",
+    "condition": "Baik",
+    "stock": 1,
+    "minStock": 1,
+    "price": 10000,
+    "image": "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcQgyZyRgKFNVNPQEwNXA5HQHnj0-_Q7hh9dqg&s",
+    "serviceMode": "both"
   }
 ]

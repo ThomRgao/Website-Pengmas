@@ -241,8 +241,7 @@ function getBorrowings() {
   return rows.map(row => ({
     ...row,
     borrowType: normalizeBorrowType(row.borrowType || 'peminjaman'),
-    borrowDate: row.borrowDate || row.submittedAt || '',
-    expectedReturn: row.expectedReturn || '',
+    requestedBorrowDate: row.requestedBorrowDate || row.borrowDate || '',
     returnRequestStatus: row.returnRequestStatus || (row.status === 'return_requested' ? 'pending' : null),
     returnRequestedAt: row.returnRequestedAt || null,
     returnVerifiedAt: row.returnVerifiedAt || null,
@@ -251,7 +250,11 @@ function getBorrowings() {
     paymentProofName: row.paymentProofName || '',
     paymentStatus: row.paymentStatus || (normalizeBorrowType(row.borrowType) === 'penyewaan' ? 'pending_verification' : null),
     whatsappStatus: row.whatsappStatus || null,
-    whatsappResponse: row.whatsappResponse || null
+    whatsappResponse: row.whatsappResponse || null,
+    returnPhoto: row.returnPhoto || '',
+    conditionOnReturn: row.conditionOnReturn || '',
+    returnNotes: row.returnNotes || '',
+    linkedReturnId: row.linkedReturnId || null
   }))
 }
 function saveBorrowings(data) {
@@ -354,11 +357,6 @@ function isItemAllowedForType(item, borrowType) {
   return false
 }
 
-function isValidISODate(dateStr) {
-  if (!dateStr) return false
-  return /^\d{4}-\d{2}-\d{2}$/.test(String(dateStr))
-}
-
 function fillTemplate(template, payload) {
   let text = String(template || '')
   Object.keys(payload || {}).forEach(key => {
@@ -366,6 +364,262 @@ function fillTemplate(template, payload) {
     text = text.replaceAll(`{{${key}}}`, val)
   })
   return text
+}
+
+function cleanBase64Image(value) {
+  if (!value) return ''
+  if (typeof value !== 'string') return ''
+  const trimmed = value.trim()
+  if (!trimmed.startsWith('data:image/')) return ''
+  return trimmed
+}
+
+function clearBorrowingMediaFields(borrowing) {
+  if (!borrowing) return
+
+  borrowing.paymentProof = ''
+  borrowing.paymentProofName = ''
+  borrowing.returnPhoto = ''
+  borrowing.updatedAt = nowISODateTime()
+}
+
+function clearPublicReturnMediaFields(returnRow) {
+  if (!returnRow) return
+
+  returnRow.returnPhoto = ''
+  returnRow.updatedAt = nowISODateTime()
+}
+
+function findActiveBorrowingForReturn({ borrowingId, itemId }) {
+  const borrowings = getBorrowings()
+
+  let targetBorrowing = null
+
+  if (borrowingId) {
+    targetBorrowing = borrowings.find(
+      b => String(b.id) === String(borrowingId)
+    )
+  }
+
+  if (!targetBorrowing && itemId) {
+    const itemBorrowings = borrowings
+      .filter(b => b.itemId === Number(itemId) && b.status === 'borrowed')
+      .sort((a, b) => {
+        const da = new Date(b.updatedAt || b.createdAt || b.approvedAt || 0).getTime()
+        const db = new Date(a.updatedAt || a.createdAt || a.approvedAt || 0).getTime()
+        return da - db
+      })
+
+    if (itemBorrowings.length) {
+      targetBorrowing = itemBorrowings[0]
+    }
+  }
+
+  return {
+    borrowings,
+    targetBorrowing
+  }
+}
+
+function createPublicReturnRequest({
+  borrowingId,
+  itemId,
+  returnerName,
+  returnerPhone,
+  conditionOnReturn,
+  returnNotes,
+  returnPhoto
+}) {
+  const { borrowings, targetBorrowing } = findActiveBorrowingForReturn({
+    borrowingId,
+    itemId
+  })
+
+  const publicReturns = getPublicReturns()
+  const normalizedReturnPhoto = cleanBase64Image(returnPhoto)
+
+  if (!targetBorrowing) {
+    return {
+      ok: false,
+      status: 400,
+      error: 'Data peminjaman aktif tidak ditemukan. Pilih barang beserta nama peminjam yang sedang aktif.'
+    }
+  }
+
+  if (targetBorrowing.status !== 'borrowed') {
+    return {
+      ok: false,
+      status: 400,
+      error: 'Barang yang dipilih sudah tidak berada dalam status dipinjam / disewa.'
+    }
+  }
+
+  if (targetBorrowing.returnRequestStatus === 'pending') {
+    return {
+      ok: false,
+      status: 400,
+      error: 'Pengembalian untuk data ini sudah diajukan dan sedang menunggu verifikasi admin.'
+    }
+  }
+
+  if (!returnerName || !returnerPhone) {
+    return {
+      ok: false,
+      status: 400,
+      error: 'Nama pengembali dan no HP wajib diisi.'
+    }
+  }
+
+  if (!normalizedReturnPhoto) {
+    return {
+      ok: false,
+      status: 400,
+      error: 'Foto barang yang dikembalikan wajib diupload.'
+    }
+  }
+
+  const row = {
+    id: nextId(publicReturns),
+    type: 'return-request',
+    borrowingId: targetBorrowing.id,
+    itemId: targetBorrowing.itemId,
+    itemName: targetBorrowing.itemName,
+    borrowType: targetBorrowing.borrowType,
+    returnerName,
+    returnerPhone,
+    conditionOnReturn: conditionOnReturn || 'Baik',
+    returnNotes: returnNotes || '',
+    returnPhoto: normalizedReturnPhoto,
+    submittedAt: todayISO(),
+    status: 'pending_verification',
+    verifiedAt: null,
+    verifiedBy: null,
+    createdAt: nowISODateTime(),
+    updatedAt: nowISODateTime()
+  }
+
+  targetBorrowing.linkedReturnId = row.id
+  targetBorrowing.returnRequestStatus = 'pending'
+  targetBorrowing.returnRequestedAt = todayISO()
+  targetBorrowing.returnPhoto = normalizedReturnPhoto
+  targetBorrowing.conditionOnReturn = conditionOnReturn || 'Baik'
+  targetBorrowing.returnNotes = returnNotes || ''
+  targetBorrowing.updatedAt = nowISODateTime()
+
+  publicReturns.unshift(row)
+
+  savePublicReturns(publicReturns)
+  saveBorrowings(borrowings)
+
+  return {
+    ok: true,
+    status: 200,
+    payload: {
+      success: true,
+      message: 'Permintaan pengembalian berhasil dikirim dan menunggu verifikasi admin',
+      borrowing: targetBorrowing,
+      returnRow: row
+    }
+  }
+}
+
+function verifyBorrowingReturnById({ borrowingId, adminName, adminUserId }) {
+  const id = Number(borrowingId)
+  const borrowings = getBorrowings()
+  const items = getItems()
+  const transactions = getTransactions()
+  const publicReturns = getPublicReturns()
+
+  const borrowing = borrowings.find(x => x.id === id)
+  if (!borrowing) {
+    return {
+      ok: false,
+      status: 404,
+      error: 'Not found'
+    }
+  }
+
+  if (borrowing.status !== 'borrowed') {
+    return {
+      ok: false,
+      status: 400,
+      error: 'Status tidak valid untuk verifikasi pengembalian'
+    }
+  }
+
+  if (borrowing.returnRequestStatus !== 'pending') {
+    return {
+      ok: false,
+      status: 400,
+      error: 'Belum ada form pengembalian yang diajukan'
+    }
+  }
+
+  const item = items.find(i => i.id === borrowing.itemId)
+  if (!item) {
+    return {
+      ok: false,
+      status: 404,
+      error: 'Item not found'
+    }
+  }
+
+  borrowing.status = 'returned'
+  borrowing.returnDate = todayISO()
+  borrowing.returnRequestStatus = 'verified'
+  borrowing.returnVerifiedAt = todayISO()
+  borrowing.returnVerifiedBy = adminName
+  borrowing.updatedAt = nowISODateTime()
+
+  item.stock += Number(borrowing.quantity)
+
+  let linkedReturn = null
+
+  if (borrowing.linkedReturnId) {
+    linkedReturn = publicReturns.find(r => r.id === borrowing.linkedReturnId)
+    if (linkedReturn) {
+      linkedReturn.status = 'verified'
+      linkedReturn.verifiedAt = todayISO()
+      linkedReturn.verifiedBy = adminName
+      linkedReturn.updatedAt = nowISODateTime()
+    }
+  }
+
+  const trans = {
+    id: nextId(transactions),
+    itemId: borrowing.itemId,
+    itemName: borrowing.itemName,
+    type: 'in',
+    quantity: Number(borrowing.quantity),
+    date: todayISO(),
+    userId: adminUserId,
+    userName: adminName,
+    notes:
+      borrowing.borrowType === 'penyewaan'
+        ? 'Pengembalian penyewaan diverifikasi admin'
+        : 'Pengembalian peminjaman diverifikasi admin'
+  }
+
+  transactions.unshift(trans)
+
+  clearBorrowingMediaFields(borrowing)
+  clearPublicReturnMediaFields(linkedReturn)
+
+  saveItems(items)
+  saveBorrowings(borrowings)
+  saveTransactions(transactions)
+  savePublicReturns(publicReturns)
+
+  return {
+    ok: true,
+    status: 200,
+    payload: {
+      success: true,
+      message: 'Pengembalian berhasil diverifikasi',
+      borrowing,
+      transaction: trans
+    }
+  }
 }
 
 async function sendWhatsappNotification({ config, borrowing }) {
@@ -699,9 +953,10 @@ app.post('/api/borrowings', async (req, res) => {
   const config = getPublicConfig()
 
   const normalizedBorrowType = normalizeBorrowType(borrowType || 'peminjaman')
-  const normalizedBorrowDate = borrowDate || todayISO()
-  const normalizedExpectedReturn = expectedReturn || ''
   const item = items.find(i => i.id === Number(itemId))
+  const requestedBorrowDate = borrowDate || todayISO()
+  const submittedAt = todayISO()
+  const normalizedPaymentProof = cleanBase64Image(paymentProof)
 
   if (!item) return res.status(404).json({ error: 'Item tidak ditemukan' })
 
@@ -719,31 +974,29 @@ app.post('/api/borrowings', async (req, res) => {
     })
   }
 
-  if (!isValidISODate(normalizedBorrowDate)) {
+  if (!expectedReturn) {
     return res.status(400).json({
-      error: 'Tanggal peminjaman / penyewaan tidak valid'
+      error: 'Tanggal pengembalian wajib diisi'
     })
   }
 
-  if (!isValidISODate(normalizedExpectedReturn)) {
+  if (expectedReturn < requestedBorrowDate) {
     return res.status(400).json({
-      error: 'Tanggal pengembalian tidak valid'
+      error: 'Tanggal pengembalian tidak boleh lebih awal dari tanggal pinjam'
     })
   }
 
-  if (normalizedExpectedReturn < normalizedBorrowDate) {
+  if (Number(quantity || 0) < 1) {
     return res.status(400).json({
-      error: 'Tanggal pengembalian tidak boleh lebih awal dari tanggal peminjaman'
+      error: 'Jumlah minimal harus 1'
     })
   }
 
-  if (normalizedBorrowType === 'penyewaan' && !paymentProof) {
+  if (normalizedBorrowType === 'penyewaan' && !normalizedPaymentProof) {
     return res.status(400).json({
       error: 'Bukti pembayaran wajib diupload untuk penyewaan'
     })
   }
-
-  const submittedAt = todayISO()
 
   const borrowing = {
     id: nextId(borrowings),
@@ -757,11 +1010,12 @@ app.post('/api/borrowings', async (req, res) => {
     status: 'pending',
     notes: notes || '',
     submittedAt,
+    requestedBorrowDate,
     approvedAt: null,
-    borrowDate: normalizedBorrowDate,
-    expectedReturn: normalizedExpectedReturn,
+    borrowDate: null,
+    expectedReturn: expectedReturn || '',
     returnDate: null,
-    durationDays: diffDays(normalizedBorrowDate, normalizedExpectedReturn),
+    durationDays: diffDays(requestedBorrowDate, expectedReturn),
     linkedReturnId: null,
     returnRequestStatus: null,
     returnRequestedAt: null,
@@ -770,7 +1024,7 @@ app.post('/api/borrowings', async (req, res) => {
     returnPhoto: '',
     conditionOnReturn: '',
     returnNotes: '',
-    paymentProof: paymentProof || '',
+    paymentProof: normalizedPaymentProof || '',
     paymentProofName: paymentProofName || '',
     paymentStatus: normalizedBorrowType === 'penyewaan' ? 'pending_verification' : null,
     whatsappStatus: null,
@@ -826,7 +1080,7 @@ app.patch('/api/borrowings/:id/approve', auth, isAdmin, (req, res) => {
   item.stock -= Number(borrowing.quantity)
   borrowing.status = 'borrowed'
   borrowing.approvedAt = todayISO()
-  borrowing.borrowDate = borrowing.borrowDate || todayISO()
+  borrowing.borrowDate = borrowing.requestedBorrowDate || todayISO()
   borrowing.updatedAt = nowISODateTime()
 
   const trans = {
@@ -877,126 +1131,35 @@ app.post('/api/borrowings/:id/request-return', (req, res) => {
     returnPhoto
   } = req.body
 
-  const borrowings = getBorrowings()
-  const publicReturns = getPublicReturns()
-
-  const borrowing = borrowings.find(x => x.id === id)
-  if (!borrowing) return res.status(404).json({ error: 'Data peminjaman tidak ditemukan' })
-  if (borrowing.status !== 'borrowed') {
-    return res.status(400).json({ error: 'Hanya data yang sedang dipinjam yang bisa diajukan pengembalian' })
-  }
-
-  if (!returnerName || !returnerPhone || !returnPhoto) {
-    return res.status(400).json({ error: 'Nama, no HP, dan foto pengembalian wajib diisi' })
-  }
-
-  const row = {
-    id: nextId(publicReturns),
-    type: 'return-request',
-    borrowingId: borrowing.id,
-    itemId: borrowing.itemId,
-    itemName: borrowing.itemName,
-    borrowType: borrowing.borrowType,
+  const result = createPublicReturnRequest({
+    borrowingId: id,
+    itemId: null,
     returnerName,
     returnerPhone,
-    conditionOnReturn: conditionOnReturn || 'Baik',
-    returnNotes: returnNotes || '',
-    returnPhoto,
-    submittedAt: todayISO(),
-    status: 'pending_verification',
-    verifiedAt: null,
-    verifiedBy: null,
-    createdAt: nowISODateTime(),
-    updatedAt: nowISODateTime()
+    conditionOnReturn,
+    returnNotes,
+    returnPhoto
+  })
+
+  if (!result.ok) {
+    return res.status(result.status).json({ error: result.error })
   }
 
-  borrowing.linkedReturnId = row.id
-  borrowing.returnRequestStatus = 'pending'
-  borrowing.returnRequestedAt = todayISO()
-  borrowing.returnPhoto = returnPhoto
-  borrowing.conditionOnReturn = conditionOnReturn || 'Baik'
-  borrowing.returnNotes = returnNotes || ''
-  borrowing.updatedAt = nowISODateTime()
-
-  publicReturns.unshift(row)
-
-  savePublicReturns(publicReturns)
-  saveBorrowings(borrowings)
-
-  res.json({
-    success: true,
-    message: 'Permintaan pengembalian berhasil dikirim dan menunggu verifikasi admin',
-    borrowing,
-    returnRow: row
-  })
+  return res.json(result.payload)
 })
 
 app.post('/api/borrowings/:id/verify-return', auth, isAdmin, (req, res) => {
-  const id = Number(req.params.id)
-  const borrowings = getBorrowings()
-  const items = getItems()
-  const transactions = getTransactions()
-  const publicReturns = getPublicReturns()
-
-  const borrowing = borrowings.find(x => x.id === id)
-  if (!borrowing) return res.status(404).json({ error: 'Not found' })
-  if (borrowing.status !== 'borrowed') {
-    return res.status(400).json({ error: 'Status tidak valid untuk verifikasi pengembalian' })
-  }
-  if (borrowing.returnRequestStatus !== 'pending') {
-    return res.status(400).json({ error: 'Belum ada form pengembalian yang diajukan' })
-  }
-
-  const item = items.find(i => i.id === borrowing.itemId)
-  if (!item) return res.status(404).json({ error: 'Item not found' })
-
-  borrowing.status = 'returned'
-  borrowing.returnDate = todayISO()
-  borrowing.returnRequestStatus = 'verified'
-  borrowing.returnVerifiedAt = todayISO()
-  borrowing.returnVerifiedBy = req.user.fullName
-  borrowing.updatedAt = nowISODateTime()
-
-  item.stock += Number(borrowing.quantity)
-
-  if (borrowing.linkedReturnId) {
-    const linked = publicReturns.find(r => r.id === borrowing.linkedReturnId)
-    if (linked) {
-      linked.status = 'verified'
-      linked.verifiedAt = todayISO()
-      linked.verifiedBy = req.user.fullName
-      linked.updatedAt = nowISODateTime()
-    }
-  }
-
-  const trans = {
-    id: nextId(transactions),
-    itemId: borrowing.itemId,
-    itemName: borrowing.itemName,
-    type: 'in',
-    quantity: Number(borrowing.quantity),
-    date: todayISO(),
-    userId: req.user.id,
-    userName: req.user.fullName,
-    notes:
-      borrowing.borrowType === 'penyewaan'
-        ? 'Pengembalian penyewaan diverifikasi admin'
-        : 'Pengembalian peminjaman diverifikasi admin'
-  }
-
-  transactions.unshift(trans)
-
-  saveItems(items)
-  saveBorrowings(borrowings)
-  saveTransactions(transactions)
-  savePublicReturns(publicReturns)
-
-  res.json({
-    success: true,
-    message: 'Pengembalian berhasil diverifikasi',
-    borrowing,
-    transaction: trans
+  const result = verifyBorrowingReturnById({
+    borrowingId: req.params.id,
+    adminName: req.user.fullName,
+    adminUserId: req.user.id
   })
+
+  if (!result.ok) {
+    return res.status(result.status).json({ error: result.error })
+  }
+
+  return res.json(result.payload)
 })
 
 app.post('/api/borrowings/:id/return', auth, isAdmin, (req, res) => {
@@ -1024,6 +1187,7 @@ app.get('/api/returns-public', auth, isAdmin, (_req, res) => {
 
 app.post('/api/returns-public', (req, res) => {
   const {
+    borrowingId,
     itemId,
     returnerName,
     returnerPhone,
@@ -1032,36 +1196,21 @@ app.post('/api/returns-public', (req, res) => {
     returnPhoto
   } = req.body
 
-  const borrowings = getBorrowings()
-  const itemBorrowings = borrowings.filter(
-    b => b.itemId === Number(itemId) && b.status === 'borrowed'
-  )
-
-  if (!itemBorrowings.length) {
-    return res.status(400).json({
-      error: 'Barang ini tidak sedang tercatat dalam status dipinjam'
-    })
-  }
-
-  const latestBorrowing = itemBorrowings[0]
-
-  req.body = {
-    borrowingId: latestBorrowing.id,
+  const result = createPublicReturnRequest({
+    borrowingId,
+    itemId,
     returnerName,
     returnerPhone,
     conditionOnReturn,
     returnNotes,
     returnPhoto
+  })
+
+  if (!result.ok) {
+    return res.status(result.status).json({ error: result.error })
   }
 
-  const fakeReq = {
-    ...req,
-    params: {
-      id: String(latestBorrowing.id)
-    }
-  }
-
-  return app._router.handle(fakeReq, res, () => {})
+  return res.json(result.payload)
 })
 
 app.post('/api/returns-public/:id/verify', auth, isAdmin, (req, res) => {
@@ -1069,16 +1218,21 @@ app.post('/api/returns-public/:id/verify', auth, isAdmin, (req, res) => {
   const publicReturns = getPublicReturns()
   const row = publicReturns.find(r => r.id === id)
 
-  if (!row) return res.status(404).json({ error: 'Data return tidak ditemukan' })
-
-  const fakeReq = {
-    ...req,
-    params: {
-      id: String(row.borrowingId)
-    }
+  if (!row) {
+    return res.status(404).json({ error: 'Data return tidak ditemukan' })
   }
 
-  return app._router.handle(fakeReq, res, () => {})
+  const result = verifyBorrowingReturnById({
+    borrowingId: row.borrowingId,
+    adminName: req.user.fullName,
+    adminUserId: req.user.id
+  })
+
+  if (!result.ok) {
+    return res.status(result.status).json({ error: result.error })
+  }
+
+  return res.json(result.payload)
 })
 
 app.get('/', (_req, res) => res.send('Inventory API OK'))
