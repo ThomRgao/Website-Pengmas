@@ -3,7 +3,10 @@ import {
   Check,
   X,
   Eye,
-  RefreshCcw
+  RefreshCcw,
+  CheckCircle2,
+  AlertTriangle,
+  Info
 } from 'lucide-react'
 import api from '../api'
 
@@ -30,17 +33,119 @@ function borrowTypeLabel(type) {
   return 'Peminjaman'
 }
 
+function CenterToast({ open, type = 'success', title, message, onClose }) {
+  if (!open) return null
+
+  const themes = {
+    success: {
+      line: 'bg-emerald-500',
+      iconWrap: 'bg-emerald-100 text-emerald-600',
+      title: 'text-emerald-600',
+      icon: <CheckCircle2 size={24} />
+    },
+    warning: {
+      line: 'bg-orange-500',
+      iconWrap: 'bg-orange-100 text-orange-500',
+      title: 'text-orange-500',
+      icon: <AlertTriangle size={24} />
+    },
+    error: {
+      line: 'bg-rose-500',
+      iconWrap: 'bg-rose-100 text-rose-500',
+      title: 'text-rose-500',
+      icon: <X size={24} />
+    },
+    info: {
+      line: 'bg-blue-500',
+      iconWrap: 'bg-blue-100 text-blue-500',
+      title: 'text-blue-500',
+      icon: <Info size={24} />
+    }
+  }
+
+  const current = themes[type] || themes.info
+
+  return (
+    <div className="fixed inset-0 z-[120] flex items-center justify-center bg-black/25 backdrop-blur-[2px] px-4">
+      <div className="w-full max-w-[760px] animate-[toastPop_.22s_ease-out]">
+        <div className="bg-white rounded-[28px] shadow-[0_18px_50px_rgba(15,23,42,0.18)] border border-slate-200 p-5 sm:p-6">
+          <div className="flex items-start gap-4">
+            <div className={`w-1.5 self-stretch rounded-full ${current.line}`}></div>
+
+            <div className={`w-14 h-14 rounded-full flex items-center justify-center shadow-sm shrink-0 ${current.iconWrap}`}>
+              {current.icon}
+            </div>
+
+            <div className="flex-1 min-w-0 pt-1">
+              <h3 className={`text-2xl sm:text-3xl font-extrabold ${current.title}`}>
+                {title}
+              </h3>
+              <p className="mt-2 text-slate-600 text-base sm:text-lg leading-relaxed">
+                {message}
+              </p>
+            </div>
+
+            <button
+              onClick={onClose}
+              className="w-10 h-10 rounded-full bg-white border border-slate-200 hover:bg-slate-50 text-slate-500 flex items-center justify-center shrink-0"
+            >
+              <X size={18} />
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 export default function Borrowing() {
   const [borrowings, setBorrowings] = useState([])
   const [filter, setFilter] = useState('all')
   const [detail, setDetail] = useState(null)
   const [loading, setLoading] = useState(false)
+  const [actionLoading, setActionLoading] = useState({
+    id: null,
+    type: ''
+  })
+
+  const [toast, setToast] = useState({
+    open: false,
+    type: 'success',
+    title: '',
+    message: ''
+  })
+
+  const showToast = (type, title, message) => {
+    setToast({
+      open: true,
+      type,
+      title,
+      message
+    })
+  }
+
+  useEffect(() => {
+    if (!toast.open) return
+
+    const timer = setTimeout(() => {
+      setToast(prev => ({ ...prev, open: false }))
+    }, 2600)
+
+    return () => clearTimeout(timer)
+  }, [toast.open])
 
   const load = async () => {
     setLoading(true)
+
     try {
       const bRes = await api.get('/borrowings')
       setBorrowings(bRes.data || [])
+    } catch (err) {
+      showToast(
+        'error',
+        'Gagal memuat data',
+        err?.response?.data?.error || err?.message || 'Data pengajuan gagal dimuat.'
+      )
     } finally {
       setLoading(false)
     }
@@ -80,23 +185,123 @@ export default function Borrowing() {
     return borrowings.filter(b => b.status === filter)
   }, [borrowings, filter])
 
+  const isProcessing = (id, type = '') => {
+    if (!actionLoading.id) return false
+    if (String(actionLoading.id) !== String(id)) return false
+    if (!type) return true
+    return actionLoading.type === type
+  }
+
   const approve = async id => {
-    await api.patch(`/borrowings/${id}/approve`)
-    await load()
+    if (actionLoading.id) return
+
+    setActionLoading({
+      id,
+      type: 'approve'
+    })
+
+    try {
+      await api.patch(`/borrowings/${id}/approve`)
+      await load()
+
+      showToast(
+        'success',
+        'Success!',
+        'Pengajuan berhasil disetujui dan stok barang berhasil dikurangi.'
+      )
+    } catch (err) {
+      showToast(
+        'error',
+        'Gagal menyetujui',
+        err?.response?.data?.error || err?.message || 'Pengajuan gagal disetujui.'
+      )
+    } finally {
+      setActionLoading({
+        id: null,
+        type: ''
+      })
+    }
   }
 
   const reject = async id => {
-    await api.patch(`/borrowings/${id}/reject`)
-    await load()
+    if (actionLoading.id) return
+
+    setActionLoading({
+      id,
+      type: 'reject'
+    })
+
+    try {
+      await api.patch(`/borrowings/${id}/reject`)
+      await load()
+
+      showToast(
+        'success',
+        'Success!',
+        'Pengajuan berhasil ditolak.'
+      )
+    } catch (err) {
+      showToast(
+        'error',
+        'Gagal menolak',
+        err?.response?.data?.error || err?.message || 'Pengajuan gagal ditolak.'
+      )
+    } finally {
+      setActionLoading({
+        id: null,
+        type: ''
+      })
+    }
   }
 
   const verifyReturn = async id => {
-    await api.post(`/borrowings/${id}/verify-return`)
-    await load()
+    if (actionLoading.id) return
+
+    setActionLoading({
+      id,
+      type: 'verify-return'
+    })
+
+    try {
+      await api.post(`/borrowings/${id}/verify-return`)
+      await load()
+
+      showToast(
+        'success',
+        'Success!',
+        'Pengembalian berhasil diverifikasi dan stok barang sudah dikembalikan.'
+      )
+    } catch (err) {
+      showToast(
+        'error',
+        'Gagal verifikasi return',
+        err?.response?.data?.error || err?.message || 'Pengembalian gagal diverifikasi.'
+      )
+    } finally {
+      setActionLoading({
+        id: null,
+        type: ''
+      })
+    }
   }
 
   return (
     <div className="space-y-6 animate-fadeIn w-full min-w-0">
+      <style>{`
+        @keyframes toastPop {
+          0% { opacity: 0; transform: scale(.94) translateY(12px); }
+          100% { opacity: 1; transform: scale(1) translateY(0); }
+        }
+      `}</style>
+
+      <CenterToast
+        open={toast.open}
+        type={toast.type}
+        title={toast.title}
+        message={toast.message}
+        onClose={() => setToast(prev => ({ ...prev, open: false }))}
+      />
+
       <div>
         <h1 className="text-3xl font-bold text-gray-800">Tracking Peminjam</h1>
         <p className="text-gray-600 mt-1">
@@ -145,9 +350,13 @@ export default function Borrowing() {
           <option value="rejected">Ditolak</option>
         </select>
 
-        <button onClick={load} className="btn-secondary">
+        <button
+          onClick={load}
+          className="btn-secondary"
+          disabled={loading || !!actionLoading.id}
+        >
           <RefreshCcw size={16} />
-          Refresh Data
+          {loading ? 'Memuat...' : 'Refresh Data'}
         </button>
       </div>
 
@@ -196,7 +405,7 @@ export default function Borrowing() {
 
                   <td className="p-4 text-gray-700">
                     <div className="space-y-1 text-sm">
-                      <p><span className="font-medium">Pinjam:</span> {row.borrowDate || '-'}</p>
+                      <p><span className="font-medium">Pinjam:</span> {row.borrowDate || row.requestedBorrowDate || '-'}</p>
                       <p><span className="font-medium">Kembali:</span> {row.expectedReturn || '-'}</p>
                     </div>
                   </td>
@@ -240,6 +449,8 @@ export default function Borrowing() {
                       <button
                         onClick={() => setDetail(row)}
                         className="btn-icon text-slate-600 hover:bg-slate-50"
+                        disabled={!!actionLoading.id}
+                        title="Lihat detail"
                       >
                         <Eye size={16} />
                       </button>
@@ -248,15 +459,19 @@ export default function Borrowing() {
                         <>
                           <button
                             onClick={() => approve(row.id)}
-                            className="px-3 py-1 rounded-lg bg-green-600 text-white inline-flex items-center gap-1"
+                            disabled={!!actionLoading.id}
+                            className="px-3 py-1 rounded-lg bg-green-600 text-white inline-flex items-center gap-1 disabled:opacity-60 disabled:cursor-not-allowed"
                           >
-                            <Check size={16} /> Setujui
+                            <Check size={16} />
+                            {isProcessing(row.id, 'approve') ? 'Memproses...' : 'Setujui'}
                           </button>
                           <button
                             onClick={() => reject(row.id)}
-                            className="px-3 py-1 rounded-lg bg-red-600 text-white inline-flex items-center gap-1"
+                            disabled={!!actionLoading.id}
+                            className="px-3 py-1 rounded-lg bg-red-600 text-white inline-flex items-center gap-1 disabled:opacity-60 disabled:cursor-not-allowed"
                           >
-                            <X size={16} /> Tolak
+                            <X size={16} />
+                            {isProcessing(row.id, 'reject') ? 'Memproses...' : 'Tolak'}
                           </button>
                         </>
                       )}
@@ -264,9 +479,11 @@ export default function Borrowing() {
                       {row.status === 'borrowed' && row.returnRequestStatus === 'pending' && (
                         <button
                           onClick={() => verifyReturn(row.id)}
-                          className="px-3 py-1 rounded-lg bg-blue-600 text-white inline-flex items-center gap-1"
+                          disabled={!!actionLoading.id}
+                          className="px-3 py-1 rounded-lg bg-blue-600 text-white inline-flex items-center gap-1 disabled:opacity-60 disabled:cursor-not-allowed"
                         >
-                          <Check size={16} /> Verifikasi
+                          <Check size={16} />
+                          {isProcessing(row.id, 'verify-return') ? 'Memproses...' : 'Verifikasi'}
                         </button>
                       )}
                     </div>
@@ -330,7 +547,7 @@ export default function Borrowing() {
                         <p><b>Keperluan:</b> {detail.notes || '-'}</p>
                         <p><b>Submitted:</b> {detail.submittedAt || '-'}</p>
                         <p><b>Disetujui:</b> {detail.approvedAt || '-'}</p>
-                        <p><b>Tanggal Pinjam / Sewa:</b> {detail.borrowDate || '-'}</p>
+                        <p><b>Tanggal Pinjam / Sewa:</b> {detail.borrowDate || detail.requestedBorrowDate || '-'}</p>
                         <p><b>Tanggal Kembali:</b> {detail.expectedReturn || '-'}</p>
                         <p><b>Durasi:</b> {detail.durationDays || 0} hari</p>
                         <p><b>Tanggal Return Final:</b> {detail.returnDate || '-'}</p>

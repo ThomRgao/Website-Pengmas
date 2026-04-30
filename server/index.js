@@ -25,6 +25,7 @@ function normalizeServiceMode(value) {
   if (raw === 'both') return 'both'
   if (raw === 'keduanya') return 'both'
   if (raw === 'pinjam_dan_sewa') return 'both'
+  if (raw === 'pinjam-dan-sewa') return 'both'
 
   return 'both'
 }
@@ -42,6 +43,23 @@ function normalizeBorrowType(value) {
   return 'peminjaman'
 }
 
+function normalizeWhatsappNumber(value) {
+  const raw = String(value || '').trim()
+  const digits = raw.replace(/\D/g, '')
+
+  if (!digits) return ''
+
+  if (digits.startsWith('0')) {
+    return `62${digits.slice(1)}`
+  }
+
+  if (digits.startsWith('62')) {
+    return digits
+  }
+
+  return digits
+}
+
 function todayISO() {
   return new Date().toISOString().slice(0, 10)
 }
@@ -52,27 +70,72 @@ function nowISODateTime() {
 
 function diffDays(startDate, endDate) {
   if (!startDate || !endDate) return 0
+
   const a = new Date(startDate)
   const b = new Date(endDate)
+
+  if (Number.isNaN(a.getTime()) || Number.isNaN(b.getTime())) return 0
+
   const ms = b.getTime() - a.getTime()
   const days = Math.ceil(ms / (1000 * 60 * 60 * 24))
+
   return days > 0 ? days : 0
+}
+
+function rentalDays(startDate, endDate) {
+  const days = diffDays(startDate, endDate)
+  return days > 0 ? days : 1
+}
+
+function formatRupiah(value) {
+  return `Rp ${Number(value || 0).toLocaleString('id-ID')}`
 }
 
 function cleanBase64Image(value) {
   if (!value) return ''
   if (typeof value !== 'string') return ''
+
   const trimmed = value.trim()
+
   if (!trimmed.startsWith('data:image/')) return ''
+
   return trimmed
+}
+
+function cleanText(value) {
+  return String(value || '').trim()
+}
+
+function toPositiveInteger(value, fallback = 1) {
+  const n = Number(value)
+
+  if (!Number.isFinite(n)) return fallback
+
+  const rounded = Math.floor(n)
+
+  if (rounded < 1) return fallback
+
+  return rounded
+}
+
+function toNonNegativeNumber(value, fallback = 0) {
+  const n = Number(value)
+
+  if (!Number.isFinite(n)) return fallback
+
+  if (n < 0) return fallback
+
+  return n
 }
 
 function fillTemplate(template, payload) {
   let text = String(template || '')
+
   Object.keys(payload || {}).forEach(key => {
     const val = payload[key] == null ? '' : String(payload[key])
     text = text.replaceAll(`{{${key}}}`, val)
   })
+
   return text
 }
 
@@ -104,12 +167,15 @@ function auth(req, res, next) {
 }
 
 function isAdmin(req, res, next) {
-  if (req.user?.role !== 'admin') return res.status(403).json({ error: 'Admin only' })
+  if (req.user?.role !== 'admin') {
+    return res.status(403).json({ error: 'Admin only' })
+  }
+
   next()
 }
 
 function isItemAllowedForType(item, borrowType) {
-  const mode = normalizeServiceMode(item?.serviceMode || 'both')
+  const mode = normalizeServiceMode(item?.serviceMode || item?.service_mode || 'both')
   const type = normalizeBorrowType(borrowType)
 
   if (mode === 'both') return true
@@ -117,6 +183,33 @@ function isItemAllowedForType(item, borrowType) {
   if (mode === 'rent' && type === 'penyewaan') return true
 
   return false
+}
+
+function getPgErrorMessage(error) {
+  const code = error?.code
+  const constraint = error?.constraint || ''
+
+  if (code === '23505') {
+    if (constraint.includes('items_code_key')) {
+      return 'Kode barang sudah digunakan. Gunakan kode barang yang berbeda.'
+    }
+
+    if (constraint.includes('users_username_key')) {
+      return 'Username sudah digunakan.'
+    }
+
+    return 'Data sudah ada dan tidak boleh duplikat.'
+  }
+
+  if (code === '23503') {
+    return 'Data masih terhubung dengan data lain sehingga tidak bisa diproses.'
+  }
+
+  if (code === '23502') {
+    return 'Ada data wajib yang belum diisi.'
+  }
+
+  return error?.message || 'Terjadi kesalahan pada server.'
 }
 
 function mapUserRow(row) {
@@ -182,6 +275,8 @@ function mapBorrowingRow(row) {
     expectedReturn: row.expected_return,
     returnDate: row.return_date,
     durationDays: Number(row.duration_days || 0),
+    rentalDurationDays: Number(row.rental_duration_days || 0),
+    rentalTotalPrice: Number(row.rental_total_price || 0),
     linkedReturnId: row.linked_return_id,
     returnRequestStatus: row.return_request_status,
     returnRequestedAt: row.return_requested_at,
@@ -231,8 +326,15 @@ function mapPublicConfigRow(row) {
     whatsappApiToken: row?.whatsapp_api_token || '',
     whatsappMessageTemplate:
       row?.whatsapp_message_template ||
-      'Halo Admin, ada pengajuan penyewaan baru atas nama {{name}} untuk barang {{itemName}} sejumlah {{quantity}} unit. Bukti pembayaran sudah diupload.'
+      'Halo Admin, ada pengajuan penyewaan baru atas nama {{name}} untuk barang {{itemName}} sejumlah {{quantity}} unit. Total sewa {{rentalTotalPriceFormatted}} untuk {{rentalDurationDays}} hari. Bukti pembayaran sudah diupload.'
   }
+}
+
+async function ensureColumn(tableName, columnName, definition) {
+  await pool.query(`
+    ALTER TABLE ${tableName}
+    ADD COLUMN IF NOT EXISTS ${columnName} ${definition}
+  `)
 }
 
 async function initDatabase() {
@@ -293,6 +395,8 @@ async function initDatabase() {
       expected_return DATE,
       return_date DATE,
       duration_days INTEGER NOT NULL DEFAULT 0,
+      rental_duration_days INTEGER NOT NULL DEFAULT 0,
+      rental_total_price BIGINT NOT NULL DEFAULT 0,
       linked_return_id INTEGER,
       return_request_status VARCHAR(50),
       return_requested_at DATE,
@@ -341,13 +445,15 @@ async function initDatabase() {
     );
   `)
 
+  await ensureColumn('borrowings', 'rental_duration_days', 'INTEGER NOT NULL DEFAULT 0')
+  await ensureColumn('borrowings', 'rental_total_price', 'BIGINT NOT NULL DEFAULT 0')
+
   await pool.query(
     `
     INSERT INTO users (username, password, role, full_name, email, status, join_date)
     VALUES ($1,$2,$3,$4,$5,$6,$7)
     ON CONFLICT (username)
     DO UPDATE SET
-      password = EXCLUDED.password,
       role = EXCLUDED.role,
       full_name = EXCLUDED.full_name,
       email = EXCLUDED.email,
@@ -376,12 +482,22 @@ async function initDatabase() {
       1,
       'https://example.com/qris',
       '',
+      '6282288277920',
       '',
       '',
-      '',
-      'Halo Admin, ada pengajuan penyewaan baru atas nama {{name}} untuk barang {{itemName}} sejumlah {{quantity}} unit. Bukti pembayaran sudah diupload.'
+      'Halo Admin, ada pengajuan penyewaan baru atas nama {{name}} untuk barang {{itemName}} sejumlah {{quantity}} unit. Total sewa {{rentalTotalPriceFormatted}} untuk {{rentalDurationDays}} hari. Bukti pembayaran sudah diupload.'
     ]
   )
+
+  const configResult = await pool.query('SELECT * FROM public_config WHERE id = 1 LIMIT 1')
+  const config = configResult.rows[0]
+
+  if (config && !config.admin_whatsapp_number) {
+    await pool.query(
+      'UPDATE public_config SET admin_whatsapp_number = $1 WHERE id = 1',
+      ['6282288277920']
+    )
+  }
 
   const itemCountResult = await pool.query('SELECT COUNT(*)::int AS total FROM items')
   const totalItems = itemCountResult.rows[0]?.total || 0
@@ -466,7 +582,7 @@ async function findItemRowById(id) {
 async function sendWhatsappNotification({ config, borrowing }) {
   const apiUrl = String(config?.whatsappApiUrl || '').trim()
   const apiToken = String(config?.whatsappApiToken || '').trim()
-  const adminWhatsappNumber = String(config?.adminWhatsappNumber || '').trim()
+  const adminWhatsappNumber = normalizeWhatsappNumber(config?.adminWhatsappNumber || '')
 
   if (!apiUrl || !adminWhatsappNumber) {
     return {
@@ -481,7 +597,10 @@ async function sendWhatsappNotification({ config, borrowing }) {
     itemName: borrowing.itemName || '-',
     quantity: borrowing.quantity || 0,
     type: borrowing.borrowType || '-',
-    expectedReturn: borrowing.expectedReturn || '-'
+    expectedReturn: borrowing.expectedReturn || '-',
+    rentalDurationDays: borrowing.rentalDurationDays || 0,
+    rentalTotalPrice: borrowing.rentalTotalPrice || 0,
+    rentalTotalPriceFormatted: formatRupiah(borrowing.rentalTotalPrice || 0)
   })
 
   try {
@@ -504,12 +623,17 @@ async function sendWhatsappNotification({ config, borrowing }) {
         borrowerName: borrowing.borrowerName,
         itemName: borrowing.itemName,
         quantity: borrowing.quantity,
+        borrowType: borrowing.borrowType,
+        rentalDurationDays: borrowing.rentalDurationDays || 0,
+        rentalTotalPrice: borrowing.rentalTotalPrice || 0,
+        rentalTotalPriceFormatted: formatRupiah(borrowing.rentalTotalPrice || 0),
         paymentProof: borrowing.paymentProof || '',
         paymentProofName: borrowing.paymentProofName || ''
       })
     })
 
     let body = null
+
     try {
       body = await response.json()
     } catch {
@@ -591,7 +715,7 @@ async function createPublicReturnRequest({
     }
   }
 
-  if (!returnerName || !returnerPhone) {
+  if (!cleanText(returnerName) || !cleanText(returnerPhone)) {
     return {
       ok: false,
       status: 400,
@@ -638,8 +762,8 @@ async function createPublicReturnRequest({
       borrowingRow.item_id,
       borrowingRow.item_name,
       borrowingRow.borrow_type,
-      returnerName,
-      returnerPhone,
+      cleanText(returnerName),
+      cleanText(returnerPhone),
       conditionOnReturn || 'Baik',
       returnNotes || '',
       normalizedReturnPhoto,
@@ -697,7 +821,7 @@ async function verifyBorrowingReturnById({ borrowingId, adminName, adminUserId }
     return {
       ok: false,
       status: 404,
-      error: 'Not found'
+      error: 'Data pengajuan tidak ditemukan'
     }
   }
 
@@ -723,7 +847,7 @@ async function verifyBorrowingReturnById({ borrowingId, adminName, adminUserId }
     return {
       ok: false,
       status: 404,
-      error: 'Item not found'
+      error: 'Barang tidak ditemukan'
     }
   }
 
@@ -827,10 +951,11 @@ async function verifyBorrowingReturnById({ borrowingId, adminName, adminUserId }
     }
   } catch (error) {
     await pool.query('ROLLBACK')
+
     return {
       ok: false,
       status: 500,
-      error: error?.message || 'Gagal memverifikasi pengembalian'
+      error: getPgErrorMessage(error)
     }
   }
 }
@@ -847,6 +972,7 @@ async function bootstrapMysqlConnection() {
 app.get('/api/db-status', async (_req, res) => {
   try {
     const result = await pool.query('SELECT current_database() AS database_name, NOW() AS server_time')
+
     return res.json({
       success: true,
       message: 'Koneksi database PostgreSQL berhasil',
@@ -859,13 +985,14 @@ app.get('/api/db-status', async (_req, res) => {
     return res.status(500).json({
       success: false,
       message: 'Koneksi database PostgreSQL gagal',
-      error: error?.message || 'Unknown database error'
+      error: getPgErrorMessage(error)
     })
   }
 })
 
 app.get('/api/debug/users', async (_req, res) => {
   const users = await getUsers()
+
   res.json(users.map(u => ({
     id: u.id,
     username: u.username,
@@ -879,7 +1006,11 @@ app.get('/api/debug/users', async (_req, res) => {
 app.post('/api/auth/login', async (req, res) => {
   try {
     const { username, password } = req.body
-    const loginValue = String(username || '').trim()
+    const loginValue = cleanText(username)
+
+    if (!loginValue || !password) {
+      return res.status(400).json({ error: 'Username/email dan password wajib diisi' })
+    }
 
     const result = await pool.query(
       `
@@ -917,199 +1048,330 @@ app.post('/api/auth/login', async (req, res) => {
     })
   } catch (error) {
     console.error('Login error:', error)
-    return res.status(500).json({ error: error?.message || 'Internal server error' })
+
+    return res.status(500).json({
+      error: getPgErrorMessage(error)
+    })
   }
 })
 
 app.post('/api/auth/change-password', auth, isAdmin, async (req, res) => {
-  const { currentPassword, newPassword } = req.body
+  try {
+    const { currentPassword, newPassword } = req.body
 
-  if (!currentPassword || !newPassword) {
-    return res.status(400).json({ success: false, message: 'Invalid payload' })
+    if (!currentPassword || !newPassword) {
+      return res.status(400).json({ success: false, message: 'Invalid payload' })
+    }
+
+    const currentUser = await pool.query('SELECT * FROM users WHERE id = $1 LIMIT 1', [req.user.id])
+    const user = currentUser.rows[0]
+
+    if (!user) {
+      return res.status(404).json({ success: false, message: 'User not found' })
+    }
+
+    if (user.password !== currentPassword) {
+      return res.status(400).json({ success: false, message: 'Password saat ini salah' })
+    }
+
+    await pool.query('UPDATE users SET password = $1 WHERE id = $2', [newPassword, req.user.id])
+
+    return res.json({ success: true })
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      message: getPgErrorMessage(error)
+    })
   }
-
-  const currentUser = await pool.query('SELECT * FROM users WHERE id = $1 LIMIT 1', [req.user.id])
-  const user = currentUser.rows[0]
-
-  if (!user) {
-    return res.status(404).json({ success: false, message: 'User not found' })
-  }
-
-  if (user.password !== currentPassword) {
-    return res.status(400).json({ success: false, message: 'Password saat ini salah' })
-  }
-
-  await pool.query('UPDATE users SET password = $1 WHERE id = $2', [newPassword, req.user.id])
-
-  return res.json({ success: true })
 })
 
 app.get('/api/public-config', async (_req, res) => {
-  res.json(await getPublicConfig())
+  try {
+    res.json(await getPublicConfig())
+  } catch (error) {
+    res.status(500).json({ error: getPgErrorMessage(error) })
+  }
 })
 
 app.put('/api/public-config/qris', auth, isAdmin, async (req, res) => {
-  const current = await getPublicConfig()
-  const {
-    rentalQrisLink,
-    rentalQrisImage,
-    adminWhatsappNumber,
-    whatsappApiUrl,
-    whatsappApiToken,
-    whatsappMessageTemplate
-  } = req.body
+  try {
+    const current = await getPublicConfig()
 
-  const updated = {
-    ...current,
-    rentalQrisLink: rentalQrisLink ?? current.rentalQrisLink ?? '',
-    rentalQrisImage: rentalQrisImage ?? current.rentalQrisImage ?? '',
-    adminWhatsappNumber: adminWhatsappNumber ?? current.adminWhatsappNumber ?? '',
-    whatsappApiUrl: whatsappApiUrl ?? current.whatsappApiUrl ?? '',
-    whatsappApiToken: whatsappApiToken ?? current.whatsappApiToken ?? '',
-    whatsappMessageTemplate: whatsappMessageTemplate ?? current.whatsappMessageTemplate ?? ''
+    const {
+      rentalQrisLink,
+      rentalQrisImage,
+      adminWhatsappNumber,
+      whatsappApiUrl,
+      whatsappApiToken,
+      whatsappMessageTemplate
+    } = req.body
+
+    const updated = {
+      ...current,
+      rentalQrisLink: rentalQrisLink ?? current.rentalQrisLink ?? '',
+      rentalQrisImage: rentalQrisImage ?? current.rentalQrisImage ?? '',
+      adminWhatsappNumber: normalizeWhatsappNumber(adminWhatsappNumber ?? current.adminWhatsappNumber ?? ''),
+      whatsappApiUrl: whatsappApiUrl ?? current.whatsappApiUrl ?? '',
+      whatsappApiToken: whatsappApiToken ?? current.whatsappApiToken ?? '',
+      whatsappMessageTemplate: whatsappMessageTemplate ?? current.whatsappMessageTemplate ?? ''
+    }
+
+    await pool.query(
+      `
+      UPDATE public_config
+      SET
+        rental_qris_link = $1,
+        rental_qris_image = $2,
+        admin_whatsapp_number = $3,
+        whatsapp_api_url = $4,
+        whatsapp_api_token = $5,
+        whatsapp_message_template = $6
+      WHERE id = 1
+      `,
+      [
+        updated.rentalQrisLink,
+        updated.rentalQrisImage,
+        updated.adminWhatsappNumber,
+        updated.whatsappApiUrl,
+        updated.whatsappApiToken,
+        updated.whatsappMessageTemplate
+      ]
+    )
+
+    res.json(updated)
+  } catch (error) {
+    res.status(500).json({ error: getPgErrorMessage(error) })
   }
-
-  await pool.query(
-    `
-    UPDATE public_config
-    SET
-      rental_qris_link = $1,
-      rental_qris_image = $2,
-      admin_whatsapp_number = $3,
-      whatsapp_api_url = $4,
-      whatsapp_api_token = $5,
-      whatsapp_message_template = $6
-    WHERE id = 1
-    `,
-    [
-      updated.rentalQrisLink,
-      updated.rentalQrisImage,
-      updated.adminWhatsappNumber,
-      updated.whatsappApiUrl,
-      updated.whatsappApiToken,
-      updated.whatsappMessageTemplate
-    ]
-  )
-
-  res.json(updated)
 })
 
 app.put('/api/public-config/rental-qr', auth, isAdmin, async (req, res) => {
-  const current = await getPublicConfig()
-  const { rentalQrLink, rentalQrisLink } = req.body
+  try {
+    const current = await getPublicConfig()
+    const { rentalQrLink, rentalQrisLink } = req.body
 
-  const updatedLink = rentalQrisLink || rentalQrLink || current.rentalQrisLink || ''
+    const updatedLink = rentalQrisLink || rentalQrLink || current.rentalQrisLink || ''
 
-  await pool.query(
-    'UPDATE public_config SET rental_qris_link = $1 WHERE id = 1',
-    [updatedLink]
-  )
+    await pool.query(
+      'UPDATE public_config SET rental_qris_link = $1 WHERE id = 1',
+      [updatedLink]
+    )
 
-  res.json({
-    ...current,
-    rentalQrisLink: updatedLink
-  })
+    res.json({
+      ...current,
+      rentalQrisLink: updatedLink
+    })
+  } catch (error) {
+    res.status(500).json({ error: getPgErrorMessage(error) })
+  }
 })
 
 app.get('/api/items', async (_req, res) => {
-  res.json(await getItems())
+  try {
+    res.json(await getItems())
+  } catch (error) {
+    res.status(500).json({ error: getPgErrorMessage(error) })
+  }
 })
 
 app.post('/api/items', auth, isAdmin, async (req, res) => {
-  const result = await pool.query(
-    `
-    INSERT INTO items (
-      name,
-      code,
-      category,
-      stock,
-      min_stock,
-      condition,
-      location,
-      price,
-      image,
-      service_mode
-    )
-    VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
-    RETURNING *
-    `,
-    [
-      req.body.name,
-      req.body.code,
-      req.body.category || '',
-      Number(req.body.stock || 0),
-      Number(req.body.minStock || 0),
-      req.body.condition || 'Baik',
-      req.body.location || '',
-      Number(req.body.price || 0),
-      req.body.image || '',
-      normalizeServiceMode(req.body.serviceMode || 'both')
-    ]
-  )
+  try {
+    const payload = {
+      name: cleanText(req.body.name),
+      code: cleanText(req.body.code),
+      category: cleanText(req.body.category),
+      stock: toNonNegativeNumber(req.body.stock, 0),
+      minStock: toNonNegativeNumber(req.body.minStock, 0),
+      condition: cleanText(req.body.condition) || 'Baik',
+      location: cleanText(req.body.location),
+      price: toNonNegativeNumber(req.body.price, 0),
+      image: cleanText(req.body.image),
+      serviceMode: normalizeServiceMode(req.body.serviceMode || 'both')
+    }
 
-  res.json(mapItemRow(result.rows[0]))
+    if (!payload.name) {
+      return res.status(400).json({ error: 'Nama barang wajib diisi' })
+    }
+
+    if (!payload.code) {
+      return res.status(400).json({ error: 'Kode barang wajib diisi' })
+    }
+
+    if (!payload.category) {
+      return res.status(400).json({ error: 'Kategori barang wajib diisi' })
+    }
+
+    if (!payload.location) {
+      return res.status(400).json({ error: 'Lokasi barang wajib diisi' })
+    }
+
+    if (!payload.image) {
+      return res.status(400).json({ error: 'Gambar barang wajib diisi' })
+    }
+
+    const result = await pool.query(
+      `
+      INSERT INTO items (
+        name,
+        code,
+        category,
+        stock,
+        min_stock,
+        condition,
+        location,
+        price,
+        image,
+        service_mode
+      )
+      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
+      RETURNING *
+      `,
+      [
+        payload.name,
+        payload.code,
+        payload.category,
+        Number(payload.stock || 0),
+        Number(payload.minStock || 0),
+        payload.condition,
+        payload.location,
+        Number(payload.price || 0),
+        payload.image,
+        payload.serviceMode
+      ]
+    )
+
+    res.json(mapItemRow(result.rows[0]))
+  } catch (error) {
+    console.error('Create item error:', error)
+
+    res.status(400).json({
+      error: getPgErrorMessage(error)
+    })
+  }
 })
 
 app.put('/api/items/:id', auth, isAdmin, async (req, res) => {
-  const existing = await findItemRowById(req.params.id)
-  if (!existing) return res.status(404).json({ error: 'Item not found' })
+  try {
+    const existing = await findItemRowById(req.params.id)
 
-  const result = await pool.query(
-    `
-    UPDATE items
-    SET
-      name = $1,
-      code = $2,
-      category = $3,
-      stock = $4,
-      min_stock = $5,
-      condition = $6,
-      location = $7,
-      price = $8,
-      image = $9,
-      service_mode = $10
-    WHERE id = $11
-    RETURNING *
-    `,
-    [
-      req.body.name ?? existing.name,
-      req.body.code ?? existing.code,
-      req.body.category ?? existing.category,
-      Number(req.body.stock ?? existing.stock ?? 0),
-      Number(req.body.minStock ?? existing.min_stock ?? 0),
-      req.body.condition ?? existing.condition,
-      req.body.location ?? existing.location,
-      Number(req.body.price ?? existing.price ?? 0),
-      req.body.image ?? existing.image,
-      normalizeServiceMode(req.body.serviceMode ?? existing.service_mode ?? 'both'),
-      Number(req.params.id)
-    ]
-  )
+    if (!existing) return res.status(404).json({ error: 'Barang tidak ditemukan' })
 
-  res.json(mapItemRow(result.rows[0]))
+    const payload = {
+      name: cleanText(req.body.name ?? existing.name),
+      code: cleanText(req.body.code ?? existing.code),
+      category: cleanText(req.body.category ?? existing.category),
+      stock: toNonNegativeNumber(req.body.stock ?? existing.stock, 0),
+      minStock: toNonNegativeNumber(req.body.minStock ?? existing.min_stock, 0),
+      condition: cleanText(req.body.condition ?? existing.condition) || 'Baik',
+      location: cleanText(req.body.location ?? existing.location),
+      price: toNonNegativeNumber(req.body.price ?? existing.price, 0),
+      image: cleanText(req.body.image ?? existing.image),
+      serviceMode: normalizeServiceMode(req.body.serviceMode ?? existing.service_mode ?? 'both')
+    }
+
+    if (!payload.name) {
+      return res.status(400).json({ error: 'Nama barang wajib diisi' })
+    }
+
+    if (!payload.code) {
+      return res.status(400).json({ error: 'Kode barang wajib diisi' })
+    }
+
+    if (!payload.category) {
+      return res.status(400).json({ error: 'Kategori barang wajib diisi' })
+    }
+
+    if (!payload.location) {
+      return res.status(400).json({ error: 'Lokasi barang wajib diisi' })
+    }
+
+    if (!payload.image) {
+      return res.status(400).json({ error: 'Gambar barang wajib diisi' })
+    }
+
+    const result = await pool.query(
+      `
+      UPDATE items
+      SET
+        name = $1,
+        code = $2,
+        category = $3,
+        stock = $4,
+        min_stock = $5,
+        condition = $6,
+        location = $7,
+        price = $8,
+        image = $9,
+        service_mode = $10
+      WHERE id = $11
+      RETURNING *
+      `,
+      [
+        payload.name,
+        payload.code,
+        payload.category,
+        Number(payload.stock || 0),
+        Number(payload.minStock || 0),
+        payload.condition,
+        payload.location,
+        Number(payload.price || 0),
+        payload.image,
+        payload.serviceMode,
+        Number(req.params.id)
+      ]
+    )
+
+    res.json(mapItemRow(result.rows[0]))
+  } catch (error) {
+    console.error('Update item error:', error)
+
+    res.status(400).json({
+      error: getPgErrorMessage(error)
+    })
+  }
 })
 
 app.delete('/api/items/:id', auth, isAdmin, async (req, res) => {
-  await pool.query('DELETE FROM items WHERE id = $1', [Number(req.params.id)])
-  res.json({ ok: true })
+  try {
+    await pool.query('DELETE FROM items WHERE id = $1', [Number(req.params.id)])
+    res.json({ ok: true })
+  } catch (error) {
+    res.status(400).json({ error: getPgErrorMessage(error) })
+  }
 })
 
 app.get('/api/transactions', auth, isAdmin, async (_req, res) => {
-  res.json(await getTransactions())
+  try {
+    res.json(await getTransactions())
+  } catch (error) {
+    res.status(500).json({ error: getPgErrorMessage(error) })
+  }
 })
 
 app.post('/api/transactions/in', auth, isAdmin, async (req, res) => {
   const { itemId, quantity, notes, totalPrice } = req.body
-  const item = await findItemRowById(itemId)
 
-  if (!item) return res.status(404).json({ error: 'Item not found' })
+  const cleanItemId = Number(itemId)
+  const cleanQuantity = toPositiveInteger(quantity, 1)
+  const cleanTotalPrice = toNonNegativeNumber(totalPrice, 0)
+
+  if (!cleanItemId) {
+    return res.status(400).json({ error: 'Barang wajib dipilih' })
+  }
+
+  if (cleanQuantity < 1) {
+    return res.status(400).json({ error: 'Jumlah barang masuk minimal 1' })
+  }
+
+  const item = await findItemRowById(cleanItemId)
+
+  if (!item) return res.status(404).json({ error: 'Barang tidak ditemukan' })
 
   await pool.query('BEGIN')
 
   try {
     await pool.query(
       'UPDATE items SET stock = stock + $1 WHERE id = $2',
-      [Number(quantity), Number(itemId)]
+      [cleanQuantity, cleanItemId]
     )
 
     const transResult = await pool.query(
@@ -1129,15 +1391,15 @@ app.post('/api/transactions/in', auth, isAdmin, async (req, res) => {
       RETURNING *
       `,
       [
-        Number(itemId),
+        cleanItemId,
         item.name,
         'in',
-        Number(quantity),
+        cleanQuantity,
         todayISO(),
         req.user.id,
         req.user.fullName,
         notes || '',
-        Number(totalPrice || 0)
+        cleanTotalPrice
       ]
     )
 
@@ -1145,16 +1407,29 @@ app.post('/api/transactions/in', auth, isAdmin, async (req, res) => {
     res.json(mapTransactionRow(transResult.rows[0]))
   } catch (error) {
     await pool.query('ROLLBACK')
-    res.status(500).json({ error: error?.message || 'Gagal menambah stok' })
+    res.status(500).json({ error: getPgErrorMessage(error) })
   }
 })
 
 app.post('/api/transactions/out', auth, isAdmin, async (req, res) => {
   const { itemId, quantity, notes } = req.body
-  const item = await findItemRowById(itemId)
 
-  if (!item) return res.status(404).json({ error: 'Item not found' })
-  if (Number(item.stock || 0) < Number(quantity)) {
+  const cleanItemId = Number(itemId)
+  const cleanQuantity = toPositiveInteger(quantity, 1)
+
+  if (!cleanItemId) {
+    return res.status(400).json({ error: 'Barang wajib dipilih' })
+  }
+
+  if (cleanQuantity < 1) {
+    return res.status(400).json({ error: 'Jumlah barang keluar minimal 1' })
+  }
+
+  const item = await findItemRowById(cleanItemId)
+
+  if (!item) return res.status(404).json({ error: 'Barang tidak ditemukan' })
+
+  if (Number(item.stock || 0) < cleanQuantity) {
     return res.status(400).json({ error: 'Stok tidak cukup' })
   }
 
@@ -1163,7 +1438,7 @@ app.post('/api/transactions/out', auth, isAdmin, async (req, res) => {
   try {
     await pool.query(
       'UPDATE items SET stock = stock - $1 WHERE id = $2',
-      [Number(quantity), Number(itemId)]
+      [cleanQuantity, cleanItemId]
     )
 
     const transResult = await pool.query(
@@ -1183,10 +1458,10 @@ app.post('/api/transactions/out', auth, isAdmin, async (req, res) => {
       RETURNING *
       `,
       [
-        Number(itemId),
+        cleanItemId,
         item.name,
         'out',
-        Number(quantity),
+        cleanQuantity,
         todayISO(),
         req.user.id,
         req.user.fullName,
@@ -1199,182 +1474,225 @@ app.post('/api/transactions/out', auth, isAdmin, async (req, res) => {
     res.json(mapTransactionRow(transResult.rows[0]))
   } catch (error) {
     await pool.query('ROLLBACK')
-    res.status(500).json({ error: error?.message || 'Gagal mengurangi stok' })
+    res.status(500).json({ error: getPgErrorMessage(error) })
   }
 })
 
 app.get('/api/borrowings', async (_req, res) => {
-  res.json(await getBorrowings())
+  try {
+    res.json(await getBorrowings())
+  } catch (error) {
+    res.status(500).json({ error: getPgErrorMessage(error) })
+  }
 })
 
 app.post('/api/borrowings', async (req, res) => {
-  const {
-    borrowType,
-    itemId,
-    quantity,
-    borrowDate,
-    expectedReturn,
-    notes,
-    borrowerName,
-    borrowerPhone,
-    borrowerAddress,
-    paymentProof,
-    paymentProofName
-  } = req.body
-
-  const config = await getPublicConfig()
-  const normalizedBorrowType = normalizeBorrowType(borrowType || 'peminjaman')
-  const item = await findItemRowById(itemId)
-  const requestedBorrowDate = borrowDate || todayISO()
-  const submittedAt = todayISO()
-  const normalizedPaymentProof = cleanBase64Image(paymentProof)
-
-  if (!item) return res.status(404).json({ error: 'Item tidak ditemukan' })
-
-  const mappedItem = mapItemRow(item)
-
-  if (!isItemAllowedForType(mappedItem, normalizedBorrowType)) {
-    return res.status(400).json({
-      error: normalizedBorrowType === 'penyewaan'
-        ? 'Barang ini tidak tersedia untuk penyewaan'
-        : 'Barang ini tidak tersedia untuk peminjaman'
-    })
-  }
-
-  if (!borrowerName || !borrowerPhone) {
-    return res.status(400).json({ error: 'Nama dan no HP wajib diisi' })
-  }
-
-  if (!expectedReturn) {
-    return res.status(400).json({ error: 'Tanggal pengembalian wajib diisi' })
-  }
-
-  if (expectedReturn < requestedBorrowDate) {
-    return res.status(400).json({ error: 'Tanggal pengembalian tidak boleh lebih awal dari tanggal pinjam' })
-  }
-
-  if (Number(quantity || 0) < 1) {
-    return res.status(400).json({ error: 'Jumlah minimal harus 1' })
-  }
-
-  if (normalizedBorrowType === 'penyewaan' && !normalizedPaymentProof) {
-    return res.status(400).json({ error: 'Bukti pembayaran wajib diupload untuk penyewaan' })
-  }
-
-  const insertBorrowing = await pool.query(
-    `
-    INSERT INTO borrowings (
-      borrow_type,
-      item_id,
-      item_name,
-      borrower_name,
-      borrower_phone,
-      borrower_address,
+  try {
+    const {
+      borrowType,
+      itemId,
       quantity,
-      status,
+      borrowDate,
+      expectedReturn,
       notes,
-      submitted_at,
-      requested_borrow_date,
-      approved_at,
-      borrow_date,
-      expected_return,
-      return_date,
-      duration_days,
-      linked_return_id,
-      return_request_status,
-      return_requested_at,
-      return_verified_at,
-      return_verified_by,
-      return_photo,
-      condition_on_return,
-      return_notes,
-      payment_proof,
-      payment_proof_name,
-      payment_status,
-      whatsapp_status,
-      whatsapp_response,
-      created_at,
-      updated_at
-    )
-    VALUES (
-      $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,NOW(),NOW()
-    )
-    RETURNING *
-    `,
-    [
-      normalizedBorrowType,
-      Number(itemId),
-      item.name,
       borrowerName,
       borrowerPhone,
-      borrowerAddress || '',
-      Number(quantity || 1),
-      'pending',
-      notes || '',
-      submittedAt,
-      requestedBorrowDate,
-      null,
-      null,
-      expectedReturn || '',
-      null,
-      diffDays(requestedBorrowDate, expectedReturn),
-      null,
-      null,
-      null,
-      null,
-      null,
-      '',
-      '',
-      '',
-      normalizedPaymentProof || '',
-      paymentProofName || '',
-      normalizedBorrowType === 'penyewaan' ? 'pending_verification' : null,
-      null,
-      null
-    ]
-  )
+      borrowerAddress,
+      paymentProof,
+      paymentProofName,
+      rentalDurationDays,
+      rentalTotalPrice
+    } = req.body
 
-  let borrowingRow = insertBorrowing.rows[0]
+    const config = await getPublicConfig()
+    const normalizedBorrowType = normalizeBorrowType(borrowType || 'peminjaman')
+    const item = await findItemRowById(itemId)
+    const requestedBorrowDate = borrowDate || todayISO()
+    const submittedAt = todayISO()
+    const normalizedPaymentProof = cleanBase64Image(paymentProof)
+    const cleanQuantity = toPositiveInteger(quantity, 1)
 
-  if (normalizedBorrowType === 'penyewaan') {
-    const borrowing = mapBorrowingRow(borrowingRow)
+    if (!item) return res.status(404).json({ error: 'Item tidak ditemukan' })
 
-    const waResult = await sendWhatsappNotification({
-      config,
-      borrowing
-    })
+    const mappedItem = mapItemRow(item)
 
-    const whatsappStatus = waResult.success
-      ? 'sent'
-      : waResult.skipped
-      ? 'skipped'
-      : 'failed'
+    if (!isItemAllowedForType(mappedItem, normalizedBorrowType)) {
+      return res.status(400).json({
+        error: normalizedBorrowType === 'penyewaan'
+          ? 'Barang ini tidak tersedia untuk penyewaan'
+          : 'Barang ini tidak tersedia untuk peminjaman'
+      })
+    }
 
-    const updateWa = await pool.query(
+    if (!cleanText(borrowerName) || !cleanText(borrowerPhone)) {
+      return res.status(400).json({ error: 'Nama dan no HP wajib diisi' })
+    }
+
+    if (!expectedReturn) {
+      return res.status(400).json({ error: 'Tanggal pengembalian wajib diisi' })
+    }
+
+    if (expectedReturn < requestedBorrowDate) {
+      return res.status(400).json({ error: 'Tanggal pengembalian tidak boleh lebih awal dari tanggal pinjam' })
+    }
+
+    if (cleanQuantity < 1) {
+      return res.status(400).json({ error: 'Jumlah minimal harus 1' })
+    }
+
+    if (Number(item.stock || 0) < cleanQuantity) {
+      return res.status(400).json({ error: 'Stok barang tidak mencukupi' })
+    }
+
+    if (normalizedBorrowType === 'penyewaan' && !normalizedPaymentProof) {
+      return res.status(400).json({ error: 'Bukti pembayaran wajib diupload untuk penyewaan' })
+    }
+
+    const serverRentalDurationDays =
+      normalizedBorrowType === 'penyewaan'
+        ? rentalDays(requestedBorrowDate, expectedReturn)
+        : 0
+
+    const serverRentalTotalPrice =
+      normalizedBorrowType === 'penyewaan'
+        ? Number(item.price || 0) * cleanQuantity * serverRentalDurationDays
+        : 0
+
+    const finalRentalDurationDays =
+      normalizedBorrowType === 'penyewaan'
+        ? Number(rentalDurationDays || serverRentalDurationDays || 1)
+        : 0
+
+    const finalRentalTotalPrice =
+      normalizedBorrowType === 'penyewaan'
+        ? Number(rentalTotalPrice || serverRentalTotalPrice || 0)
+        : 0
+
+    const insertBorrowing = await pool.query(
       `
-      UPDATE borrowings
-      SET whatsapp_status = $1, whatsapp_response = $2, updated_at = NOW()
-      WHERE id = $3
+      INSERT INTO borrowings (
+        borrow_type,
+        item_id,
+        item_name,
+        borrower_name,
+        borrower_phone,
+        borrower_address,
+        quantity,
+        status,
+        notes,
+        submitted_at,
+        requested_borrow_date,
+        approved_at,
+        borrow_date,
+        expected_return,
+        return_date,
+        duration_days,
+        rental_duration_days,
+        rental_total_price,
+        linked_return_id,
+        return_request_status,
+        return_requested_at,
+        return_verified_at,
+        return_verified_by,
+        return_photo,
+        condition_on_return,
+        return_notes,
+        payment_proof,
+        payment_proof_name,
+        payment_status,
+        whatsapp_status,
+        whatsapp_response,
+        created_at,
+        updated_at
+      )
+      VALUES (
+        $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31,NOW(),NOW()
+      )
       RETURNING *
       `,
-      [whatsappStatus, JSON.stringify(waResult), borrowingRow.id]
+      [
+        normalizedBorrowType,
+        Number(itemId),
+        item.name,
+        cleanText(borrowerName),
+        cleanText(borrowerPhone),
+        borrowerAddress || '',
+        cleanQuantity,
+        'pending',
+        notes || '',
+        submittedAt,
+        requestedBorrowDate,
+        null,
+        null,
+        expectedReturn || '',
+        null,
+        diffDays(requestedBorrowDate, expectedReturn),
+        finalRentalDurationDays,
+        finalRentalTotalPrice,
+        null,
+        null,
+        null,
+        null,
+        null,
+        '',
+        '',
+        '',
+        normalizedPaymentProof || '',
+        paymentProofName || '',
+        normalizedBorrowType === 'penyewaan' ? 'pending_verification' : null,
+        null,
+        null
+      ]
     )
 
-    borrowingRow = updateWa.rows[0]
-  }
+    let borrowingRow = insertBorrowing.rows[0]
 
-  res.json(mapBorrowingRow(borrowingRow))
+    if (normalizedBorrowType === 'penyewaan') {
+      const borrowing = mapBorrowingRow(borrowingRow)
+
+      const waResult = await sendWhatsappNotification({
+        config,
+        borrowing
+      })
+
+      const whatsappStatus = waResult.success
+        ? 'sent'
+        : waResult.skipped
+        ? 'skipped'
+        : 'failed'
+
+      const updateWa = await pool.query(
+        `
+        UPDATE borrowings
+        SET whatsapp_status = $1, whatsapp_response = $2, updated_at = NOW()
+        WHERE id = $3
+        RETURNING *
+        `,
+        [whatsappStatus, JSON.stringify(waResult), borrowingRow.id]
+      )
+
+      borrowingRow = updateWa.rows[0]
+    }
+
+    res.json(mapBorrowingRow(borrowingRow))
+  } catch (error) {
+    console.error('Create borrowing error:', error)
+    res.status(500).json({ error: getPgErrorMessage(error) })
+  }
 })
 
 app.patch('/api/borrowings/:id/approve', auth, isAdmin, async (req, res) => {
   const borrowingRow = await findBorrowingRowById(req.params.id)
-  if (!borrowingRow) return res.status(404).json({ error: 'Not found' })
+
+  if (!borrowingRow) return res.status(404).json({ error: 'Data pengajuan tidak ditemukan' })
+
   if (borrowingRow.status !== 'pending') {
     return res.status(400).json({ error: 'Status tidak valid' })
   }
 
   const itemRow = await findItemRowById(borrowingRow.item_id)
-  if (!itemRow) return res.status(404).json({ error: 'Item not found' })
+
+  if (!itemRow) return res.status(404).json({ error: 'Barang tidak ditemukan' })
 
   if (!isItemAllowedForType(mapItemRow(itemRow), borrowingRow.borrow_type)) {
     return res.status(400).json({ error: 'Jenis layanan barang tidak sesuai' })
@@ -1438,66 +1756,80 @@ app.patch('/api/borrowings/:id/approve', auth, isAdmin, async (req, res) => {
     res.json(mapBorrowingRow(updateBorrowing.rows[0]))
   } catch (error) {
     await pool.query('ROLLBACK')
-    res.status(500).json({ error: error?.message || 'Gagal menyetujui pengajuan' })
+    res.status(500).json({ error: getPgErrorMessage(error) })
   }
 })
 
 app.patch('/api/borrowings/:id/reject', auth, isAdmin, async (req, res) => {
-  const borrowingRow = await findBorrowingRowById(req.params.id)
-  if (!borrowingRow) return res.status(404).json({ error: 'Not found' })
-  if (borrowingRow.status !== 'pending') {
-    return res.status(400).json({ error: 'Status tidak valid' })
+  try {
+    const borrowingRow = await findBorrowingRowById(req.params.id)
+
+    if (!borrowingRow) return res.status(404).json({ error: 'Data pengajuan tidak ditemukan' })
+
+    if (borrowingRow.status !== 'pending') {
+      return res.status(400).json({ error: 'Status tidak valid' })
+    }
+
+    const result = await pool.query(
+      `
+      UPDATE borrowings
+      SET status = $1, updated_at = NOW()
+      WHERE id = $2
+      RETURNING *
+      `,
+      ['rejected', borrowingRow.id]
+    )
+
+    res.json(mapBorrowingRow(result.rows[0]))
+  } catch (error) {
+    res.status(500).json({ error: getPgErrorMessage(error) })
   }
-
-  const result = await pool.query(
-    `
-    UPDATE borrowings
-    SET status = $1, updated_at = NOW()
-    WHERE id = $2
-    RETURNING *
-    `,
-    ['rejected', borrowingRow.id]
-  )
-
-  res.json(mapBorrowingRow(result.rows[0]))
 })
 
 app.post('/api/borrowings/:id/request-return', async (req, res) => {
-  const result = await createPublicReturnRequest({
-    borrowingId: Number(req.params.id),
-    itemId: null,
-    returnerName: req.body.returnerName,
-    returnerPhone: req.body.returnerPhone,
-    conditionOnReturn: req.body.conditionOnReturn,
-    returnNotes: req.body.returnNotes,
-    returnPhoto: req.body.returnPhoto
-  })
+  try {
+    const result = await createPublicReturnRequest({
+      borrowingId: Number(req.params.id),
+      itemId: null,
+      returnerName: req.body.returnerName,
+      returnerPhone: req.body.returnerPhone,
+      conditionOnReturn: req.body.conditionOnReturn,
+      returnNotes: req.body.returnNotes,
+      returnPhoto: req.body.returnPhoto
+    })
 
-  if (!result.ok) {
-    return res.status(result.status).json({ error: result.error })
+    if (!result.ok) {
+      return res.status(result.status).json({ error: result.error })
+    }
+
+    return res.json(result.payload)
+  } catch (error) {
+    return res.status(500).json({ error: getPgErrorMessage(error) })
   }
-
-  return res.json(result.payload)
 })
 
 app.post('/api/borrowings/:id/verify-return', auth, isAdmin, async (req, res) => {
-  const result = await verifyBorrowingReturnById({
-    borrowingId: req.params.id,
-    adminName: req.user.fullName,
-    adminUserId: req.user.id
-  })
+  try {
+    const result = await verifyBorrowingReturnById({
+      borrowingId: req.params.id,
+      adminName: req.user.fullName,
+      adminUserId: req.user.id
+    })
 
-  if (!result.ok) {
-    return res.status(result.status).json({ error: result.error })
+    if (!result.ok) {
+      return res.status(result.status).json({ error: result.error })
+    }
+
+    return res.json(result.payload)
+  } catch (error) {
+    return res.status(500).json({ error: getPgErrorMessage(error) })
   }
-
-  return res.json(result.payload)
 })
 
 app.post('/api/borrowings/:id/return', auth, isAdmin, async (req, res) => {
   const borrowingRow = await findBorrowingRowById(req.params.id)
 
-  if (!borrowingRow) return res.status(404).json({ error: 'Not found' })
+  if (!borrowingRow) return res.status(404).json({ error: 'Data pengajuan tidak ditemukan' })
 
   if (borrowingRow.return_request_status !== 'pending') {
     return res.status(400).json({
@@ -1511,49 +1843,61 @@ app.post('/api/borrowings/:id/return', auth, isAdmin, async (req, res) => {
 })
 
 app.get('/api/returns-public', auth, isAdmin, async (_req, res) => {
-  res.json(await getPublicReturns())
+  try {
+    res.json(await getPublicReturns())
+  } catch (error) {
+    res.status(500).json({ error: getPgErrorMessage(error) })
+  }
 })
 
 app.post('/api/returns-public', async (req, res) => {
-  const result = await createPublicReturnRequest({
-    borrowingId: req.body.borrowingId,
-    itemId: req.body.itemId,
-    returnerName: req.body.returnerName,
-    returnerPhone: req.body.returnerPhone,
-    conditionOnReturn: req.body.conditionOnReturn,
-    returnNotes: req.body.returnNotes,
-    returnPhoto: req.body.returnPhoto
-  })
+  try {
+    const result = await createPublicReturnRequest({
+      borrowingId: req.body.borrowingId,
+      itemId: req.body.itemId,
+      returnerName: req.body.returnerName,
+      returnerPhone: req.body.returnerPhone,
+      conditionOnReturn: req.body.conditionOnReturn,
+      returnNotes: req.body.returnNotes,
+      returnPhoto: req.body.returnPhoto
+    })
 
-  if (!result.ok) {
-    return res.status(result.status).json({ error: result.error })
+    if (!result.ok) {
+      return res.status(result.status).json({ error: result.error })
+    }
+
+    return res.json(result.payload)
+  } catch (error) {
+    return res.status(500).json({ error: getPgErrorMessage(error) })
   }
-
-  return res.json(result.payload)
 })
 
 app.post('/api/returns-public/:id/verify', auth, isAdmin, async (req, res) => {
-  const returnResult = await pool.query(
-    'SELECT * FROM public_returns WHERE id = $1 LIMIT 1',
-    [Number(req.params.id)]
-  )
-  const row = returnResult.rows[0]
+  try {
+    const returnResult = await pool.query(
+      'SELECT * FROM public_returns WHERE id = $1 LIMIT 1',
+      [Number(req.params.id)]
+    )
+    const row = returnResult.rows[0]
 
-  if (!row) {
-    return res.status(404).json({ error: 'Data return tidak ditemukan' })
+    if (!row) {
+      return res.status(404).json({ error: 'Data return tidak ditemukan' })
+    }
+
+    const result = await verifyBorrowingReturnById({
+      borrowingId: row.borrowing_id,
+      adminName: req.user.fullName,
+      adminUserId: req.user.id
+    })
+
+    if (!result.ok) {
+      return res.status(result.status).json({ error: result.error })
+    }
+
+    return res.json(result.payload)
+  } catch (error) {
+    return res.status(500).json({ error: getPgErrorMessage(error) })
   }
-
-  const result = await verifyBorrowingReturnById({
-    borrowingId: row.borrowing_id,
-    adminName: req.user.fullName,
-    adminUserId: req.user.id
-  })
-
-  if (!result.ok) {
-    return res.status(result.status).json({ error: result.error })
-  }
-
-  return res.json(result.payload)
 })
 
 app.get('/', (_req, res) => res.send('Inventory API OK'))

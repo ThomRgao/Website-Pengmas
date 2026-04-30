@@ -146,9 +146,45 @@ function conditionBadgeClass(condition) {
   return 'bg-rose-100 text-rose-700'
 }
 
-function openWhatsAppAdminWithMessage(message) {
-  const waUrl = `https://wa.me/6282288277920?text=${encodeURIComponent(message)}`
+function normalizeWhatsappNumber(value) {
+  const raw = String(value || '').trim()
+  const digits = raw.replace(/\D/g, '')
+
+  if (!digits) return '6282288277920'
+
+  if (digits.startsWith('0')) {
+    return `62${digits.slice(1)}`
+  }
+
+  if (digits.startsWith('62')) {
+    return digits
+  }
+
+  return digits
+}
+
+function openWhatsAppAdminWithMessage(message, adminWhatsappNumber) {
+  const phone = normalizeWhatsappNumber(adminWhatsappNumber)
+  const waUrl = `https://wa.me/${phone}?text=${encodeURIComponent(message)}`
   window.open(waUrl, '_blank', 'noopener,noreferrer')
+}
+
+function calculateRentalDays(startDate, endDate) {
+  if (!startDate || !endDate) return 1
+
+  const start = new Date(startDate)
+  const end = new Date(endDate)
+
+  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) return 1
+
+  const diff = end.getTime() - start.getTime()
+  const days = Math.ceil(diff / (1000 * 60 * 60 * 24))
+
+  return Math.max(days, 1)
+}
+
+function formatRupiah(value) {
+  return `Rp ${Number(value || 0).toLocaleString('id-ID')}`
 }
 
 export default function DashboardPublic() {
@@ -351,6 +387,29 @@ export default function DashboardPublic() {
       ) || null
     )
   }, [activeReturnableRows, returnForm.borrowingId])
+
+  const rentalCalculation = useMemo(() => {
+    const price = Number(selectedItem?.price || 0)
+    const quantity = Number(borrowForm.quantity || 1)
+    const durationDays = calculateRentalDays(
+      borrowForm.borrowDate,
+      borrowForm.expectedReturn
+    )
+
+    const total = price * quantity * durationDays
+
+    return {
+      price,
+      quantity,
+      durationDays,
+      total
+    }
+  }, [
+    selectedItem?.price,
+    borrowForm.quantity,
+    borrowForm.borrowDate,
+    borrowForm.expectedReturn
+  ])
 
   const filteredReturnRows = useMemo(() => {
     const q = returnSearch.trim().toLowerCase()
@@ -559,7 +618,12 @@ export default function DashboardPublic() {
       `Alamat: ${payload.borrowerAddress || '-'}\n` +
       `Tanggal Pinjam: ${payload.borrowDate || '-'}\n` +
       `Rencana Kembali: ${payload.expectedReturn || '-'}\n` +
-      `Keperluan: ${payload.notes || '-'}\n\n` +
+      `Keperluan: ${payload.notes || '-'}\n` +
+      `${
+        payload.borrowType === 'penyewaan'
+          ? `Total Sewa: ${formatRupiah(payload.rentalTotalPrice)} (${payload.rentalDurationDays} hari x ${payload.quantity} unit)\n`
+          : ''
+      }\n` +
       `${payload.borrowType === 'penyewaan' ? 'Bukti pembayaran sudah diupload.' : 'Mohon dicek ya.'}`
     )
   }
@@ -641,7 +705,15 @@ export default function DashboardPublic() {
       borrowerPhone: borrowForm.borrowerPhone,
       borrowerAddress: borrowForm.borrowerAddress,
       paymentProof: borrowForm.paymentProof,
-      paymentProofName: borrowForm.paymentProofName
+      paymentProofName: borrowForm.paymentProofName,
+      rentalDurationDays:
+        borrowForm.borrowType === 'penyewaan'
+          ? rentalCalculation.durationDays
+          : 0,
+      rentalTotalPrice:
+        borrowForm.borrowType === 'penyewaan'
+          ? rentalCalculation.total
+          : 0
     }
 
     try {
@@ -669,7 +741,7 @@ export default function DashboardPublic() {
 
       if (isRental) {
         setTimeout(() => {
-          openWhatsAppAdminWithMessage(waMessage)
+          openWhatsAppAdminWithMessage(waMessage, config?.adminWhatsappNumber)
         }, 500)
       }
     } catch (err) {
@@ -1140,6 +1212,17 @@ export default function DashboardPublic() {
                           <Package size={16} className="text-slate-400" />
                           <span>{serviceModeLabel(item.serviceMode)}</span>
                         </div>
+
+                        {selectedService === 'penyewaan' && (
+                          <div className="rounded-2xl bg-violet-50 border border-violet-100 p-3 text-violet-700">
+                            <p className="text-xs font-bold uppercase tracking-wide">
+                              Harga Dasar Sewa
+                            </p>
+                            <p className="text-lg font-extrabold">
+                              {formatRupiah(item.price)}
+                            </p>
+                          </div>
+                        )}
                       </div>
 
                       <button
@@ -1234,8 +1317,6 @@ export default function DashboardPublic() {
                                 <ZoomIn size={16} />
                                 Zoom / Pop Up
                               </button>
-
-                              
                             </div>
                           </div>
 
@@ -1244,6 +1325,37 @@ export default function DashboardPublic() {
                           </p>
                         </div>
                       )}
+                    </div>
+                  )}
+
+                  {borrowForm.borrowType === 'penyewaan' && (
+                    <div className="rounded-[28px] border border-violet-200 bg-white p-5 sm:p-6 shadow-sm">
+                      <div className="flex items-center justify-between gap-4 flex-wrap">
+                        <div>
+                          <p className="text-sm font-semibold text-violet-700">
+                            Total Biaya Sewa yang Harus Dibayarkan
+                          </p>
+                          <h4 className="mt-1 text-3xl font-extrabold text-slate-800">
+                            {formatRupiah(rentalCalculation.total)}
+                          </h4>
+                          <p className="mt-2 text-sm text-slate-500">
+                            Perhitungan: {formatRupiah(rentalCalculation.price)} x {rentalCalculation.quantity} unit x {rentalCalculation.durationDays} hari
+                          </p>
+                        </div>
+
+                        <div className="rounded-2xl bg-violet-50 px-4 py-3 text-right">
+                          <p className="text-xs text-violet-500 font-bold uppercase tracking-wide">
+                            Durasi Sewa
+                          </p>
+                          <p className="text-2xl font-extrabold text-violet-700">
+                            {rentalCalculation.durationDays} Hari
+                          </p>
+                        </div>
+                      </div>
+
+                      <div className="mt-4 rounded-2xl bg-violet-50 border border-violet-100 p-4 text-sm text-violet-700">
+                        Pastikan nominal pembayaran sesuai dengan total biaya sewa di atas sebelum mengupload bukti pembayaran.
+                      </div>
                     </div>
                   )}
 

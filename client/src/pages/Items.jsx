@@ -129,6 +129,7 @@ export default function Items() {
   const [imageMode, setImageMode] = useState('url')
   const [uploadName, setUploadName] = useState('')
   const [paymentUploadName, setPaymentUploadName] = useState('')
+  const [savingItem, setSavingItem] = useState(false)
 
   const [toast, setToast] = useState({
     open: false,
@@ -210,11 +211,19 @@ export default function Items() {
   const submit = async e => {
     e.preventDefault()
 
+    if (savingItem) return
+
     const payload = {
       ...form,
+      name: String(form.name || '').trim(),
+      code: String(form.code || '').trim(),
+      category: String(form.category || '').trim(),
+      location: String(form.location || '').trim(),
+      condition: form.condition || 'Baik',
       stock: Number(form.stock || 0),
       minStock: Number(form.minStock || 0),
       price: Number(form.price || 0),
+      image: String(form.image || '').trim(),
       serviceMode: form.serviceMode || 'both'
     }
 
@@ -236,25 +245,55 @@ export default function Items() {
       return
     }
 
-    if (modal === 'add') {
-      const { data } = await api.post('/items', payload)
-      setItems(prev => [...prev, data])
-      showToast('success', 'Success!', 'Data barang baru berhasil ditambahkan.')
-    } else if (modal === 'edit') {
-      const { data } = await api.put(`/items/${form.id}`, payload)
-      setItems(prev => prev.map(item => (item.id === data.id ? data : item)))
-      showToast('success', 'Success!', 'Data barang berhasil diperbarui.')
+    if (payload.stock < 0 || payload.minStock < 0 || payload.price < 0) {
+      showToast(
+        'warning',
+        'Warning!',
+        'Stok, minimal stok, dan harga tidak boleh minus.'
+      )
+      return
     }
 
-    setModal(null)
-    resetItemFormState()
+    try {
+      setSavingItem(true)
+
+      if (modal === 'add') {
+        const { data } = await api.post('/items', payload)
+        setItems(prev => [...prev, data])
+        showToast('success', 'Success!', 'Data barang baru berhasil ditambahkan.')
+      } else if (modal === 'edit') {
+        const { data } = await api.put(`/items/${form.id}`, payload)
+        setItems(prev => prev.map(item => (item.id === data.id ? data : item)))
+        showToast('success', 'Success!', 'Data barang berhasil diperbarui.')
+      }
+
+      setModal(null)
+      resetItemFormState()
+    } catch (err) {
+      showToast(
+        'error',
+        'Gagal menyimpan barang',
+        err?.response?.data?.error || err?.message || 'Data barang gagal disimpan.'
+      )
+    } finally {
+      setSavingItem(false)
+    }
   }
 
   const del = async id => {
     if (!confirm('Hapus item ini?')) return
-    await api.delete(`/items/${id}`)
-    setItems(prev => prev.filter(item => item.id !== id))
-    showToast('success', 'Success!', 'Data barang berhasil dihapus.')
+
+    try {
+      await api.delete(`/items/${id}`)
+      setItems(prev => prev.filter(item => item.id !== id))
+      showToast('success', 'Success!', 'Data barang berhasil dihapus.')
+    } catch (err) {
+      showToast(
+        'error',
+        'Gagal menghapus barang',
+        err?.response?.data?.error || err?.message || 'Data barang gagal dihapus.'
+      )
+    }
   }
 
   const submitBorrow = async e => {
@@ -307,15 +346,95 @@ export default function Items() {
     )
   }
 
+  const compressImageToDataUrl = file =>
+    new Promise((resolve, reject) => {
+      if (!file) {
+        resolve('')
+        return
+      }
+
+      const reader = new FileReader()
+
+      reader.onerror = () => {
+        reject(new Error('File gambar tidak bisa dibaca'))
+      }
+
+      reader.onload = () => {
+        const img = new Image()
+
+        img.onerror = () => {
+          reject(new Error('Format gambar tidak valid'))
+        }
+
+        img.onload = () => {
+          const maxWidth = 1400
+          const maxHeight = 1400
+          let { width, height } = img
+
+          if (width > maxWidth || height > maxHeight) {
+            const ratio = Math.min(maxWidth / width, maxHeight / height)
+            width = Math.round(width * ratio)
+            height = Math.round(height * ratio)
+          }
+
+          const canvas = document.createElement('canvas')
+          canvas.width = width
+          canvas.height = height
+
+          const ctx = canvas.getContext('2d')
+          ctx.fillStyle = '#ffffff'
+          ctx.fillRect(0, 0, width, height)
+          ctx.drawImage(img, 0, 0, width, height)
+
+          let quality = 0.82
+          let result = canvas.toDataURL('image/jpeg', quality)
+
+          while (result.length > 2800000 && quality > 0.45) {
+            quality -= 0.08
+            result = canvas.toDataURL('image/jpeg', quality)
+          }
+
+          resolve(result)
+        }
+
+        img.src = reader.result
+      }
+
+      reader.readAsDataURL(file)
+    })
+
   const onSelectFile = async file => {
     if (!file) return
 
-    const reader = new FileReader()
-    reader.onload = () => {
-      setForm(prev => ({ ...prev, image: reader.result }))
+    try {
+      const dataUrl = await compressImageToDataUrl(file)
+
+      setForm(prev => ({
+        ...prev,
+        image: dataUrl
+      }))
+
       setUploadName(file.name)
+
+      showToast(
+        'success',
+        'Success!',
+        'Gambar barang berhasil diproses.'
+      )
+    } catch (err) {
+      setForm(prev => ({
+        ...prev,
+        image: ''
+      }))
+
+      setUploadName('')
+
+      showToast(
+        'error',
+        'Gagal memproses gambar',
+        err?.message || 'File gambar gagal diproses.'
+      )
     }
-    reader.readAsDataURL(file)
   }
 
   const onSelectPaymentFile = async file => {
@@ -822,7 +941,9 @@ export default function Items() {
                   >
                     Batal
                   </button>
-                  <button className="btn-primary">Simpan</button>
+                  <button className="btn-primary" disabled={savingItem}>
+                    {savingItem ? 'Menyimpan...' : 'Simpan'}
+                  </button>
                 </div>
               </form>
             )}

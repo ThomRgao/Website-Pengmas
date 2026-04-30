@@ -49,6 +49,23 @@ export default function Settings() {
     })()
   }, [])
 
+  const normalizeWhatsappNumber = value => {
+    const raw = String(value || '').trim()
+    const digits = raw.replace(/\D/g, '')
+
+    if (!digits) return ''
+
+    if (digits.startsWith('0')) {
+      return `62${digits.slice(1)}`
+    }
+
+    if (digits.startsWith('62')) {
+      return digits
+    }
+
+    return digits
+  }
+
   const submitPassword = async e => {
     e.preventDefault()
     setPwMsg(null)
@@ -101,10 +118,13 @@ export default function Settings() {
 
     try {
       setSavingQris(true)
+
+      const cleanAdminWhatsappNumber = normalizeWhatsappNumber(adminWhatsappNumber)
+
       const { data } = await api.put('/public-config/qris', {
         rentalQrisLink,
         rentalQrisImage,
-        adminWhatsappNumber,
+        adminWhatsappNumber: cleanAdminWhatsappNumber,
         whatsappApiUrl,
         whatsappApiToken,
         whatsappMessageTemplate
@@ -164,13 +184,16 @@ export default function Settings() {
         <div className="card lg:col-span-3">
           <div className="flex items-center gap-2 mb-3">
             <QrCode className="text-blue-600" />
-            <h3 className="text-lg font-bold">QRIS Penyewaan</h3>
+            <h3 className="text-lg font-bold">QRIS Penyewaan & WhatsApp Admin</h3>
           </div>
 
           <form onSubmit={saveQris} className="space-y-5">
             <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
               <div>
-                <label className="text-sm text-gray-600">Link QRIS</label>
+                <label className="text-sm text-gray-600 flex items-center gap-2">
+                  <Link2 size={16} />
+                  Link QRIS
+                </label>
                 <input
                   className="input"
                   value={rentalQrisLink}
@@ -180,7 +203,27 @@ export default function Settings() {
               </div>
 
               <div>
-                <label className="text-sm text-gray-600">URL API WhatsApp</label>
+                <label className="text-sm text-gray-600 flex items-center gap-2">
+                  <Phone size={16} />
+                  Nomor WhatsApp Admin
+                </label>
+                <input
+                  className="input"
+                  value={adminWhatsappNumber}
+                  onChange={e => setAdminWhatsappNumber(e.target.value)}
+                  placeholder="Contoh: 6282288277920"
+                />
+                <p className="text-xs text-gray-500 mt-1">
+                  Gunakan format internasional tanpa tanda +. Contoh: 628xxxxxxxxxx.
+                  Jika mengetik 08xxxxxxxxxx, sistem akan otomatis menyimpan menjadi 628xxxxxxxxxx.
+                </p>
+              </div>
+
+              <div>
+                <label className="text-sm text-gray-600 flex items-center gap-2">
+                  <MessageCircle size={16} />
+                  URL API WhatsApp
+                </label>
                 <input
                   className="input"
                   value={whatsappApiUrl}
@@ -189,11 +232,23 @@ export default function Settings() {
                 />
               </div>
 
-      
+              <div>
+                <label className="text-sm text-gray-600">Token API WhatsApp</label>
+                <input
+                  className="input"
+                  type="password"
+                  value={whatsappApiToken}
+                  onChange={e => setWhatsappApiToken(e.target.value)}
+                  placeholder="Opsional, isi jika API WhatsApp memakai token"
+                />
+              </div>
             </div>
 
             <div>
-              <label className="text-sm text-gray-600 mb-2 block">Upload Gambar QRIS</label>
+              <label className="text-sm text-gray-600 mb-2 flex items-center gap-2">
+                <ImageIcon size={16} />
+                Upload Gambar QRIS
+              </label>
               <label className="w-full">
                 <input
                   type="file"
@@ -220,22 +275,26 @@ export default function Settings() {
               </p>
             </div>
 
-            {(rentalQrisImage || rentalQrisLink) && (
+            {(rentalQrisImage || rentalQrisLink || adminWhatsappNumber) && (
               <div className="rounded-2xl border border-blue-100 bg-blue-50 p-4 flex flex-col items-center gap-3">
-                {rentalQrisImage ? (
-                  <img
-                    src={rentalQrisImage}
-                    alt="QRIS Penyewaan"
-                    className="rounded-xl border border-blue-200 bg-white p-2 max-w-[260px] max-h-[260px] object-contain"
-                  />
-                ) : (
-                  <img
-                    src={`https://api.qrserver.com/v1/create-qr-code/?size=220x220&data=${encodeURIComponent(
-                      rentalQrisLink
-                    )}`}
-                    alt="QRIS Penyewaan"
-                    className="rounded-xl border border-blue-200 bg-white p-2"
-                  />
+                {(rentalQrisImage || rentalQrisLink) && (
+                  <>
+                    {rentalQrisImage ? (
+                      <img
+                        src={rentalQrisImage}
+                        alt="QRIS Penyewaan"
+                        className="rounded-xl border border-blue-200 bg-white p-2 max-w-[260px] max-h-[260px] object-contain"
+                      />
+                    ) : (
+                      <img
+                        src={`https://api.qrserver.com/v1/create-qr-code/?size=220x220&data=${encodeURIComponent(
+                          rentalQrisLink
+                        )}`}
+                        alt="QRIS Penyewaan"
+                        className="rounded-xl border border-blue-200 bg-white p-2"
+                      />
+                    )}
+                  </>
                 )}
 
                 {rentalQrisLink && (
@@ -244,7 +303,18 @@ export default function Settings() {
 
                 {adminWhatsappNumber && (
                   <p className="text-sm text-blue-800 text-center">
-                    Notifikasi penyewaan akan diarahkan ke nomor admin: <b>{adminWhatsappNumber}</b>
+                    Notifikasi penyewaan akan diarahkan ke nomor admin:{' '}
+                    <b>{normalizeWhatsappNumber(adminWhatsappNumber)}</b>
+                  </p>
+                )}
+
+                {whatsappApiUrl ? (
+                  <p className="text-sm text-emerald-700 text-center">
+                    API WhatsApp sudah dikonfigurasi.
+                  </p>
+                ) : (
+                  <p className="text-sm text-amber-700 text-center">
+                    URL API WhatsApp belum diisi. Sistem tetap bisa membuka WhatsApp manual melalui dashboard publik.
                   </p>
                 )}
               </div>
