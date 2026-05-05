@@ -912,17 +912,24 @@ export default function DashboardPublic() {
 
       <section className="bg-white border-b border-slate-100 sticky top-0 z-30">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 py-4 sm:py-5 flex flex-col lg:flex-row lg:items-center justify-between gap-4">
-          <div className="flex items-center gap-4 min-w-0">
-            <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-blue-600 to-violet-600 shadow-md shrink-0"></div>
-            <div className="min-w-0">
-              <h1 className="text-lg sm:text-2xl font-extrabold text-slate-800 tracking-tight truncate">
-                Layanan Peminjaman & Penyewaan Inventaris
-              </h1>
-              <p className="text-sm text-slate-500">
-                Pilih jenis layanan, ajukan barang, lalu kirim form pengembalian saat barang dikembalikan.
-              </p>
-            </div>
+          <div className="flex items-center gap-5">
+          <div className="w-16 h-16 rounded-2xl bg-white shadow-lg border border-gray-100 flex items-center justify-center overflow-hidden">
+            <img
+              src="/logo-desa.png"
+              alt="Logo Desa"
+              className="w-12 h-12 object-contain"
+            />
           </div>
+
+          <div>
+            <h1 className="text-2xl font-extrabold text-gray-900">
+              Layanan Peminjaman & Penyewaan Inventaris
+            </h1>
+            <p className="text-gray-500">
+              Pilih jenis layanan, ajukan barang, lalu kirim form pengembalian saat barang dikembalikan.
+            </p>
+          </div>
+        </div>
 
           <div className="flex flex-wrap items-center gap-3">
             <button

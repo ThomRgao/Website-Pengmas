@@ -22,8 +22,8 @@ export default function Sidebar({ user, open }) {
     { to: '/', label: 'Dashboard Admin', icon: LayoutDashboard },
     { to: '/borrowing', label: 'Tracking Peminjam', icon: ClipboardList },
     { to: '/items', label: 'Data Barang', icon: Package },
-    { to: '/items-in', label: 'Barang Masuk', icon: TrendingUp },
-    { to: '/items-out', label: 'Barang Keluar', icon: TrendingDown },
+    //{ to: '/items-in', label: 'Barang Masuk', icon: TrendingUp },
+    //{ to: '/items-out', label: 'Barang Keluar', icon: TrendingDown },
     { to: '/reports', label: 'Laporan', icon: Archive },
     { to: '/analytics', label: 'Analytics', icon: Activity },
     { to: '/settings', label: 'Pengaturan', icon: Settings }

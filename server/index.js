@@ -148,7 +148,7 @@ function signToken(user) {
       fullName: user.fullName
     },
     JWT_SECRET,
-    { expiresIn: '7d' }
+    { expiresIn: '10h' }
   )
 }
 
@@ -210,6 +210,52 @@ function getPgErrorMessage(error) {
   }
 
   return error?.message || 'Terjadi kesalahan pada server.'
+}
+
+function getPagination(req, defaultLimit = 10) {
+  const rawPage = Number(req.query.page || 1)
+  const rawLimit = Number(req.query.limit || defaultLimit)
+
+  const allowedLimits = [10, 25, 50, 100]
+
+  const page = Number.isFinite(rawPage) && rawPage > 0
+    ? Math.floor(rawPage)
+    : 1
+
+  const limitCandidate = Number.isFinite(rawLimit) && rawLimit > 0
+    ? Math.floor(rawLimit)
+    : defaultLimit
+
+  const limit = allowedLimits.includes(limitCandidate)
+    ? limitCandidate
+    : defaultLimit
+
+  const offset = (page - 1) * limit
+
+  return {
+    page,
+    limit,
+    offset,
+    allowedLimits
+  }
+}
+
+function makePaginationResponse({ data, page, limit, total }) {
+  const cleanTotal = Number(total || 0)
+  const cleanLimit = Number(limit || 10)
+  const totalPages = Math.max(Math.ceil(cleanTotal / cleanLimit), 1)
+
+  return {
+    data,
+    pagination: {
+      page,
+      limit,
+      total: cleanTotal,
+      totalPages,
+      hasPrev: page > 1,
+      hasNext: page < totalPages
+    }
+  }
 }
 
 function mapUserRow(row) {
@@ -1478,10 +1524,82 @@ app.post('/api/transactions/out', auth, isAdmin, async (req, res) => {
   }
 })
 
-app.get('/api/borrowings', async (_req, res) => {
+app.get('/api/borrowings', async (req, res) => {
   try {
-    res.json(await getBorrowings())
+    const hasPagination = req.query.page || req.query.limit || req.query.filter || req.query.search
+
+    if (!hasPagination) {
+      return res.json(await getBorrowings())
+    }
+
+    const { page, limit, offset } = getPagination(req, 10)
+    const filter = cleanText(req.query.filter || 'all')
+    const search = cleanText(req.query.search || '').toLowerCase()
+
+    const where = []
+    const params = []
+
+    if (filter && filter !== 'all') {
+      if (filter === 'return-pending') {
+        where.push(`status = 'borrowed' AND return_request_status = 'pending'`)
+      } else {
+        params.push(filter)
+        where.push(`status = $${params.length}`)
+      }
+    }
+
+    if (search) {
+      params.push(`%${search}%`)
+      where.push(`
+        (
+          LOWER(COALESCE(borrower_name, '')) LIKE $${params.length}
+          OR LOWER(COALESCE(borrower_phone, '')) LIKE $${params.length}
+          OR LOWER(COALESCE(borrower_address, '')) LIKE $${params.length}
+          OR LOWER(COALESCE(item_name, '')) LIKE $${params.length}
+          OR LOWER(COALESCE(borrow_type, '')) LIKE $${params.length}
+          OR LOWER(COALESCE(status, '')) LIKE $${params.length}
+          OR LOWER(COALESCE(notes, '')) LIKE $${params.length}
+        )
+      `)
+    }
+
+    const whereSql = where.length > 0
+      ? `WHERE ${where.join(' AND ')}`
+      : ''
+
+    const totalResult = await pool.query(
+      `
+      SELECT COUNT(*)::int AS total
+      FROM borrowings
+      ${whereSql}
+      `,
+      params
+    )
+
+    const total = totalResult.rows[0]?.total || 0
+
+    const dataResult = await pool.query(
+      `
+      SELECT *
+      FROM borrowings
+      ${whereSql}
+      ORDER BY id DESC
+      LIMIT $${params.length + 1}
+      OFFSET $${params.length + 2}
+      `,
+      [...params, limit, offset]
+    )
+
+    return res.json(
+      makePaginationResponse({
+        data: dataResult.rows.map(mapBorrowingRow),
+        page,
+        limit,
+        total
+      })
+    )
   } catch (error) {
+    console.error('Get borrowings error:', error)
     res.status(500).json({ error: getPgErrorMessage(error) })
   }
 })

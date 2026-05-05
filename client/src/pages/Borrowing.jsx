@@ -6,7 +6,10 @@ import {
   RefreshCcw,
   CheckCircle2,
   AlertTriangle,
-  Info
+  Info,
+  Search,
+  ChevronLeft,
+  ChevronRight
 } from 'lucide-react'
 import api from '../api'
 
@@ -31,6 +34,10 @@ function statusBadgeClass(row) {
 function borrowTypeLabel(type) {
   if (type === 'penyewaan') return 'Penyewaan'
   return 'Peminjaman'
+}
+
+function formatRupiah(value) {
+  return `Rp ${Number(value || 0).toLocaleString('id-ID')}`
 }
 
 function CenterToast({ open, type = 'success', title, message, onClose }) {
@@ -101,11 +108,23 @@ function CenterToast({ open, type = 'success', title, message, onClose }) {
 export default function Borrowing() {
   const [borrowings, setBorrowings] = useState([])
   const [filter, setFilter] = useState('all')
+  const [search, setSearch] = useState('')
   const [detail, setDetail] = useState(null)
   const [loading, setLoading] = useState(false)
   const [actionLoading, setActionLoading] = useState({
     id: null,
     type: ''
+  })
+
+  const [page, setPage] = useState(1)
+  const [limit, setLimit] = useState(10)
+  const [pagination, setPagination] = useState({
+    page: 1,
+    limit: 10,
+    total: 0,
+    totalPages: 1,
+    hasPrev: false,
+    hasNext: false
   })
 
   const [toast, setToast] = useState({
@@ -134,12 +153,36 @@ export default function Borrowing() {
     return () => clearTimeout(timer)
   }, [toast.open])
 
-  const load = async () => {
+  const load = async (
+    targetPage = page,
+    targetFilter = filter,
+    targetSearch = search,
+    targetLimit = limit
+  ) => {
     setLoading(true)
 
     try {
-      const bRes = await api.get('/borrowings')
-      setBorrowings(bRes.data || [])
+      const bRes = await api.get('/borrowings', {
+        params: {
+          page: targetPage,
+          limit: targetLimit,
+          filter: targetFilter,
+          search: targetSearch
+        }
+      })
+
+      setBorrowings(bRes.data?.data || [])
+      setPagination(
+        bRes.data?.pagination || {
+          page: targetPage,
+          limit: targetLimit,
+          total: 0,
+          totalPages: 1,
+          hasPrev: false,
+          hasNext: false
+        }
+      )
+      setPage(targetPage)
     } catch (err) {
       showToast(
         'error',
@@ -152,11 +195,11 @@ export default function Borrowing() {
   }
 
   useEffect(() => {
-    load()
+    load(1, filter, search, limit)
   }, [])
 
   const stats = useMemo(() => {
-    const total = borrowings.length
+    const total = pagination.total || 0
     const pending = borrowings.filter(b => b.status === 'pending').length
     const active = borrowings.filter(b => b.status === 'borrowed').length
     const returnPending = borrowings.filter(
@@ -171,25 +214,53 @@ export default function Borrowing() {
       returnPending,
       returned
     }
-  }, [borrowings])
-
-  const rows = useMemo(() => {
-    if (filter === 'all') return borrowings
-
-    if (filter === 'return-pending') {
-      return borrowings.filter(
-        b => b.status === 'borrowed' && b.returnRequestStatus === 'pending'
-      )
-    }
-
-    return borrowings.filter(b => b.status === filter)
-  }, [borrowings, filter])
+  }, [borrowings, pagination.total])
 
   const isProcessing = (id, type = '') => {
     if (!actionLoading.id) return false
     if (String(actionLoading.id) !== String(id)) return false
     if (!type) return true
     return actionLoading.type === type
+  }
+
+  const handleFilterChange = value => {
+    setFilter(value)
+    setPage(1)
+    load(1, value, search, limit)
+  }
+
+  const handleLimitChange = value => {
+    const nextLimit = Number(value || 10)
+
+    setLimit(nextLimit)
+    setPage(1)
+    load(1, filter, search, nextLimit)
+  }
+
+  const submitSearch = e => {
+    e.preventDefault()
+    setPage(1)
+    load(1, filter, search, limit)
+  }
+
+  const clearSearch = () => {
+    setSearch('')
+    setPage(1)
+    load(1, filter, '', limit)
+  }
+
+  const refreshData = () => {
+    load(page, filter, search, limit)
+  }
+
+  const goPrev = () => {
+    if (!pagination.hasPrev || loading || actionLoading.id) return
+    load(page - 1, filter, search, limit)
+  }
+
+  const goNext = () => {
+    if (!pagination.hasNext || loading || actionLoading.id) return
+    load(page + 1, filter, search, limit)
   }
 
   const approve = async id => {
@@ -202,7 +273,7 @@ export default function Borrowing() {
 
     try {
       await api.patch(`/borrowings/${id}/approve`)
-      await load()
+      await load(page, filter, search, limit)
 
       showToast(
         'success',
@@ -233,7 +304,7 @@ export default function Borrowing() {
 
     try {
       await api.patch(`/borrowings/${id}/reject`)
-      await load()
+      await load(page, filter, search, limit)
 
       showToast(
         'success',
@@ -264,7 +335,7 @@ export default function Borrowing() {
 
     try {
       await api.post(`/borrowings/${id}/verify-return`)
-      await load()
+      await load(page, filter, search, limit)
 
       showToast(
         'success',
@@ -313,56 +384,119 @@ export default function Borrowing() {
         <div className="card bg-gradient-to-br from-slate-50 to-gray-50 border border-slate-200">
           <p className="text-sm text-gray-600">Total Pengajuan</p>
           <p className="text-3xl font-bold text-gray-800 mt-2">{stats.total}</p>
+          <p className="text-xs text-gray-500 mt-2">Semua data sesuai filter</p>
         </div>
 
         <div className="card bg-gradient-to-br from-amber-50 to-orange-50 border border-amber-200">
           <p className="text-sm text-gray-600">Pending ACC</p>
           <p className="text-3xl font-bold text-gray-800 mt-2">{stats.pending}</p>
+          <p className="text-xs text-gray-500 mt-2">Di halaman ini</p>
         </div>
 
         <div className="card bg-gradient-to-br from-violet-50 to-purple-50 border border-violet-200">
           <p className="text-sm text-gray-600">Sedang Berjalan</p>
           <p className="text-3xl font-bold text-gray-800 mt-2">{stats.active}</p>
+          <p className="text-xs text-gray-500 mt-2">Di halaman ini</p>
         </div>
 
         <div className="card bg-gradient-to-br from-blue-50 to-cyan-50 border border-blue-200">
           <p className="text-sm text-gray-600">Menunggu Verifikasi Return</p>
           <p className="text-3xl font-bold text-gray-800 mt-2">{stats.returnPending}</p>
+          <p className="text-xs text-gray-500 mt-2">Di halaman ini</p>
         </div>
 
         <div className="card bg-gradient-to-br from-emerald-50 to-green-50 border border-emerald-200">
           <p className="text-sm text-gray-600">Sudah Dikembalikan</p>
           <p className="text-3xl font-bold text-gray-800 mt-2">{stats.returned}</p>
+          <p className="text-xs text-gray-500 mt-2">Di halaman ini</p>
         </div>
       </div>
 
-      <div className="card flex flex-wrap gap-3 items-center justify-between">
-        <select
-          className="input w-full sm:w-80"
-          value={filter}
-          onChange={e => setFilter(e.target.value)}
-        >
-          <option value="all">Semua Data</option>
-          <option value="pending">Pending</option>
-          <option value="borrowed">Sedang Dipinjam / Disewa</option>
-          <option value="return-pending">Menunggu Verifikasi Return</option>
-          <option value="returned">Dikembalikan</option>
-          <option value="rejected">Ditolak</option>
-        </select>
+      <div className="card space-y-4">
+        <div className="grid grid-cols-1 xl:grid-cols-[1fr_auto_auto] gap-3 items-center">
+          <form onSubmit={submitSearch} className="relative">
+            <Search
+              size={18}
+              className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"
+            />
 
-        <button
-          onClick={load}
-          className="btn-secondary"
-          disabled={loading || !!actionLoading.id}
-        >
-          <RefreshCcw size={16} />
-          {loading ? 'Memuat...' : 'Refresh Data'}
-        </button>
+            <input
+              className="input pl-10 pr-28"
+              placeholder="Cari nama, no HP, alamat, barang, jenis, atau catatan..."
+              value={search}
+              onChange={e => setSearch(e.target.value)}
+              disabled={loading || !!actionLoading.id}
+            />
+
+            {search && (
+              <button
+                type="button"
+                onClick={clearSearch}
+                className="absolute right-20 top-1/2 -translate-y-1/2 text-xs text-red-600 hover:underline"
+                disabled={loading || !!actionLoading.id}
+              >
+                Clear
+              </button>
+            )}
+
+            <button
+              type="submit"
+              className="absolute right-2 top-1/2 -translate-y-1/2 rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-blue-700 disabled:opacity-60 disabled:cursor-not-allowed"
+              disabled={loading || !!actionLoading.id}
+            >
+              Cari
+            </button>
+          </form>
+
+          <select
+            className="input w-full xl:w-80"
+            value={filter}
+            onChange={e => handleFilterChange(e.target.value)}
+            disabled={loading || !!actionLoading.id}
+          >
+            <option value="all">Semua Data</option>
+            <option value="pending">Pending</option>
+            <option value="borrowed">Sedang Dipinjam / Disewa</option>
+            <option value="return-pending">Menunggu Verifikasi Return</option>
+            <option value="returned">Dikembalikan</option>
+            <option value="rejected">Ditolak</option>
+          </select>
+
+          <button
+            onClick={refreshData}
+            className="btn-secondary"
+            disabled={loading || !!actionLoading.id}
+          >
+            <RefreshCcw size={16} />
+            {loading ? 'Memuat...' : 'Refresh Data'}
+          </button>
+        </div>
+
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 pt-1">
+          <div className="text-sm text-gray-600">
+            Menampilkan halaman <b>{pagination.page}</b> dari <b>{pagination.totalPages}</b> • Total <b>{pagination.total}</b> data
+          </div>
+
+          <div className="flex items-center gap-2">
+            <span className="text-sm text-gray-500">Data per halaman</span>
+            <select
+              className="input w-28"
+              value={limit}
+              onChange={e => handleLimitChange(e.target.value)}
+              disabled={loading || !!actionLoading.id}
+            >
+              <option value={10}>10</option>
+              <option value={25}>25</option>
+              <option value={50}>50</option>
+              <option value={100}>100</option>
+            </select>
+          </div>
+        </div>
       </div>
 
       <div className="card p-0 overflow-hidden w-full min-w-0">
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[1280px]">
+          <table className="w-full min-w-[1400px]">
             <thead>
               <tr className="border-b border-gray-200 bg-gray-50">
                 <th className="text-left p-4 font-semibold text-gray-700">Nama</th>
@@ -372,12 +506,13 @@ export default function Borrowing() {
                 <th className="text-left p-4 font-semibold text-gray-700">Kontak</th>
                 <th className="text-left p-4 font-semibold text-gray-700">Status</th>
                 <th className="text-left p-4 font-semibold text-gray-700">Return</th>
+                <th className="text-left p-4 font-semibold text-gray-700">Total Sewa</th>
                 <th className="text-left p-4 font-semibold text-gray-700">Aksi</th>
               </tr>
             </thead>
 
             <tbody>
-              {rows.map(row => (
+              {borrowings.map(row => (
                 <tr
                   key={row.id}
                   className="border-b border-gray-100 hover:bg-gray-50 align-top"
@@ -444,6 +579,21 @@ export default function Borrowing() {
                     </div>
                   </td>
 
+                  <td className="p-4 text-gray-700">
+                    {row.borrowType === 'penyewaan' ? (
+                      <div className="space-y-1 text-sm">
+                        <p className="font-semibold text-violet-700">
+                          {formatRupiah(row.rentalTotalPrice)}
+                        </p>
+                        <p className="text-gray-500">
+                          {row.rentalDurationDays || row.durationDays || 0} hari
+                        </p>
+                      </div>
+                    ) : (
+                      <span className="text-sm text-gray-400">-</span>
+                    )}
+                  </td>
+
                   <td className="p-4">
                     <div className="flex flex-wrap gap-2">
                       <button
@@ -465,6 +615,7 @@ export default function Borrowing() {
                             <Check size={16} />
                             {isProcessing(row.id, 'approve') ? 'Memproses...' : 'Setujui'}
                           </button>
+
                           <button
                             onClick={() => reject(row.id)}
                             disabled={!!actionLoading.id}
@@ -491,15 +642,41 @@ export default function Borrowing() {
                 </tr>
               ))}
 
-              {rows.length === 0 && (
+              {borrowings.length === 0 && (
                 <tr>
-                  <td className="p-6 text-gray-500" colSpan={8}>
+                  <td className="p-6 text-gray-500" colSpan={9}>
                     {loading ? 'Memuat data...' : 'Tidak ada data'}
                   </td>
                 </tr>
               )}
             </tbody>
           </table>
+        </div>
+
+        <div className="border-t border-gray-100 p-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+          <div className="text-sm text-gray-600">
+            Halaman <b>{pagination.page}</b> dari <b>{pagination.totalPages}</b> • Total <b>{pagination.total}</b> data
+          </div>
+
+          <div className="flex items-center gap-2">
+            <button
+              onClick={goPrev}
+              disabled={!pagination.hasPrev || loading || !!actionLoading.id}
+              className="btn-secondary disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              <ChevronLeft size={16} />
+              Sebelumnya
+            </button>
+
+            <button
+              onClick={goNext}
+              disabled={!pagination.hasNext || loading || !!actionLoading.id}
+              className="btn-secondary disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              Berikutnya
+              <ChevronRight size={16} />
+            </button>
+          </div>
         </div>
       </div>
 
@@ -577,6 +754,8 @@ export default function Borrowing() {
                           <p><b>Status Pembayaran:</b> {detail.paymentStatus || '-'}</p>
                           <p><b>Status WhatsApp:</b> {detail.whatsappStatus || '-'}</p>
                           <p><b>Nama File Bukti:</b> {detail.paymentProofName || '-'}</p>
+                          <p><b>Durasi Sewa:</b> {detail.rentalDurationDays || detail.durationDays || 0} hari</p>
+                          <p><b>Total Sewa:</b> {formatRupiah(detail.rentalTotalPrice)}</p>
                         </div>
                       </div>
                     )}

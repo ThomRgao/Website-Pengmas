@@ -131,6 +131,9 @@ export default function Items() {
   const [paymentUploadName, setPaymentUploadName] = useState('')
   const [savingItem, setSavingItem] = useState(false)
 
+  const [page, setPage] = useState(1)
+  const [pageSize, setPageSize] = useState(10)
+
   const [toast, setToast] = useState({
     open: false,
     type: 'success',
@@ -164,6 +167,10 @@ export default function Items() {
     load()
   }, [])
 
+  useEffect(() => {
+    setPage(1)
+  }, [search, category, serviceFilter, pageSize])
+
   const categoryOptions = useMemo(() => {
     const raw = items.map(it => it.category).filter(Boolean)
     return [...new Set(raw)]
@@ -186,6 +193,34 @@ export default function Items() {
     })
   }, [items, search, category, serviceFilter])
 
+  const totalPages = useMemo(() => {
+    return Math.max(1, Math.ceil(filtered.length / pageSize))
+  }, [filtered.length, pageSize])
+
+  useEffect(() => {
+    if (page > totalPages) {
+      setPage(totalPages)
+    }
+  }, [page, totalPages])
+
+  const paginatedItems = useMemo(() => {
+    const start = (page - 1) * pageSize
+    const end = start + pageSize
+    return filtered.slice(start, end)
+  }, [filtered, page, pageSize])
+
+  const paginationInfo = useMemo(() => {
+    const total = filtered.length
+    const start = total === 0 ? 0 : (page - 1) * pageSize + 1
+    const end = Math.min(page * pageSize, total)
+
+    return {
+      total,
+      start,
+      end
+    }
+  }, [filtered.length, page, pageSize])
+
   const summary = useMemo(() => {
     const totalJenis = items.length
     const totalUnit = items.reduce((sum, item) => sum + Number(item.stock || 0), 0)
@@ -206,6 +241,14 @@ export default function Items() {
     setForm(emptyItemForm)
     setImageMode('url')
     setUploadName('')
+  }
+
+  const goToPreviousPage = () => {
+    setPage(prev => Math.max(prev - 1, 1))
+  }
+
+  const goToNextPage = () => {
+    setPage(prev => Math.min(prev + 1, totalPages))
   }
 
   const submit = async e => {
@@ -599,11 +642,53 @@ export default function Items() {
             <option value="rent">Penyewaan</option>
             <option value="both">Peminjaman & Penyewaan</option>
           </select>
+
+          <select
+            className="input w-40"
+            value={pageSize}
+            onChange={e => setPageSize(Number(e.target.value))}
+          >
+            <option value={10}>10 data</option>
+            <option value={25}>25 data</option>
+            <option value={50}>50 data</option>
+            <option value={100}>100 data</option>
+          </select>
+        </div>
+
+        <div className="mt-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 text-sm text-slate-600">
+          <p>
+            Menampilkan <b>{paginationInfo.start}</b> - <b>{paginationInfo.end}</b> dari{' '}
+            <b>{paginationInfo.total}</b> data barang
+          </p>
+
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={goToPreviousPage}
+              disabled={page <= 1}
+              className="btn-secondary disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              Sebelumnya
+            </button>
+
+            <span className="px-4 py-2 rounded-xl bg-slate-100 text-slate-700 font-semibold">
+              Halaman {page} dari {totalPages}
+            </span>
+
+            <button
+              type="button"
+              onClick={goToNextPage}
+              disabled={page >= totalPages}
+              className="btn-secondary disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              Berikutnya
+            </button>
+          </div>
         </div>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-        {filtered.map(item => {
+        {paginatedItems.map(item => {
           const available = Number(item.stock || 0) > 0
           const mode = item.serviceMode || 'both'
           const allowBorrow = mode === 'borrow' || mode === 'both'
@@ -723,6 +808,39 @@ export default function Items() {
           )
         })}
       </div>
+
+      {filtered.length > 0 && (
+        <div className="card flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 text-sm text-slate-600">
+          <p>
+            Menampilkan <b>{paginationInfo.start}</b> - <b>{paginationInfo.end}</b> dari{' '}
+            <b>{paginationInfo.total}</b> data barang
+          </p>
+
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={goToPreviousPage}
+              disabled={page <= 1}
+              className="btn-secondary disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              Sebelumnya
+            </button>
+
+            <span className="px-4 py-2 rounded-xl bg-slate-100 text-slate-700 font-semibold">
+              Halaman {page} dari {totalPages}
+            </span>
+
+            <button
+              type="button"
+              onClick={goToNextPage}
+              disabled={page >= totalPages}
+              className="btn-secondary disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              Berikutnya
+            </button>
+          </div>
+        </div>
+      )}
 
       {filtered.length === 0 && (
         <div className="card text-center text-gray-500 py-10">
