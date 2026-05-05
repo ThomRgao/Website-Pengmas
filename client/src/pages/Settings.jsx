@@ -2,6 +2,8 @@ import React, { useEffect, useState } from 'react'
 import { Eye, EyeOff, QrCode, MessageCircle, Link2, Image as ImageIcon, Phone } from 'lucide-react'
 import api from '../api'
 
+const logoDesa = '/logo-desa.png'
+
 export default function Settings() {
   const user = JSON.parse(localStorage.getItem('user') || '{}')
   const [language, setLanguage] = useState(localStorage.getItem('lang') || 'Indonesia')
@@ -159,7 +161,14 @@ export default function Settings() {
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <div className="card">
           <div className="text-center">
-            <div className="w-24 h-24 rounded-full bg-gradient-to-br from-blue-500 to-purple-500 mx-auto mb-4"></div>
+            <div className="w-24 h-24 rounded-full bg-white border border-slate-200 shadow-sm mx-auto mb-4 overflow-hidden flex items-center justify-center p-2">
+              <img
+                src={logoDesa}
+                alt="Logo Desa Cimaragas"
+                className="w-full h-full object-contain"
+              />
+            </div>
+
             <h3 className="text-xl font-bold text-gray-800">{user.fullName}</h3>
             <p className="text-gray-600">{user.username}</p>
             <span className="inline-block px-3 py-1 rounded-full text-sm font-semibold mt-2 bg-purple-100 text-purple-700">

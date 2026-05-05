@@ -2,6 +2,8 @@ import React from 'react'
 import { Menu } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 
+const logoDesa = '/logo-desa.png'
+
 export default function Topbar({ user, onToggleSidebar }) {
   const nav = useNavigate()
 
@@ -18,7 +20,14 @@ export default function Topbar({ user, onToggleSidebar }) {
       </button>
 
       <div className="flex items-center gap-3">
-        <div className="w-9 h-9 rounded-full bg-gradient-to-br from-blue-500 to-purple-500"></div>
+        <div className="w-9 h-9 rounded-full bg-white border border-slate-200 shadow-sm overflow-hidden flex items-center justify-center p-1">
+          <img
+            src={logoDesa}
+            alt="Logo Desa Cimaragas"
+            className="w-full h-full object-contain"
+          />
+        </div>
+
         <div className="hidden sm:block">
           <p className="text-sm font-semibold leading-tight">{user?.fullName}</p>
           <button onClick={logout} className="text-xs text-red-600 hover:underline">
