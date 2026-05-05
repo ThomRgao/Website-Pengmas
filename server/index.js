@@ -1,142 +1,147 @@
-import express from 'express'
-import cors from 'cors'
-import jwt from 'jsonwebtoken'
-import dotenv from 'dotenv'
-import pool, { testMysqlConnection } from './db/mysql.js'
+import express from "express";
+import cors from "cors";
+import jwt from "jsonwebtoken";
+import dotenv from "dotenv";
+import pool, { testMysqlConnection } from "./db/mysql.js";
 
-dotenv.config()
+dotenv.config();
 
-const app = express()
-app.use(cors())
-app.use(express.json({ limit: '30mb' }))
+const app = express();
+app.use(cors());
+app.use(express.json({ limit: "30mb" }));
 
-const JWT_SECRET = process.env.JWT_SECRET || 'devsecret_super_secret_replace_me'
-const PORT = Number(process.env.PORT || 5000)
+const JWT_SECRET =
+  process.env.JWT_SECRET || "devsecret_super_secret_replace_me";
+const PORT = Number(process.env.PORT || 5000);
 
 function normalizeServiceMode(value) {
-  const raw = String(value || 'both').toLowerCase().trim()
+  const raw = String(value || "both")
+    .toLowerCase()
+    .trim();
 
-  if (raw === 'pinjam') return 'borrow'
-  if (raw === 'peminjaman') return 'borrow'
-  if (raw === 'borrow') return 'borrow'
-  if (raw === 'sewa') return 'rent'
-  if (raw === 'penyewaan') return 'rent'
-  if (raw === 'rent') return 'rent'
-  if (raw === 'both') return 'both'
-  if (raw === 'keduanya') return 'both'
-  if (raw === 'pinjam_dan_sewa') return 'both'
-  if (raw === 'pinjam-dan-sewa') return 'both'
+  if (raw === "pinjam") return "borrow";
+  if (raw === "peminjaman") return "borrow";
+  if (raw === "borrow") return "borrow";
+  if (raw === "sewa") return "rent";
+  if (raw === "penyewaan") return "rent";
+  if (raw === "rent") return "rent";
+  if (raw === "both") return "both";
+  if (raw === "keduanya") return "both";
+  if (raw === "pinjam_dan_sewa") return "both";
+  if (raw === "pinjam-dan-sewa") return "both";
 
-  return 'both'
+  return "both";
 }
 
 function normalizeBorrowType(value) {
-  const raw = String(value || 'peminjaman').toLowerCase().trim()
+  const raw = String(value || "peminjaman")
+    .toLowerCase()
+    .trim();
 
-  if (raw === 'rent') return 'penyewaan'
-  if (raw === 'sewa') return 'penyewaan'
-  if (raw === 'penyewaan') return 'penyewaan'
-  if (raw === 'borrow') return 'peminjaman'
-  if (raw === 'pinjam') return 'peminjaman'
-  if (raw === 'peminjaman') return 'peminjaman'
+  if (raw === "rent") return "penyewaan";
+  if (raw === "sewa") return "penyewaan";
+  if (raw === "penyewaan") return "penyewaan";
+  if (raw === "borrow") return "peminjaman";
+  if (raw === "pinjam") return "peminjaman";
+  if (raw === "peminjaman") return "peminjaman";
 
-  return 'peminjaman'
+  return "peminjaman";
 }
 
 function normalizeWhatsappNumber(value) {
-  const raw = String(value || '').trim()
-  const digits = raw.replace(/\D/g, '')
+  const raw = String(value || "").trim();
+  const digits = raw.replace(/\D/g, "");
 
-  if (!digits) return ''
+  if (!digits) return "";
 
-  if (digits.startsWith('0')) {
-    return `62${digits.slice(1)}`
+  if (digits.startsWith("0")) {
+    return `62${digits.slice(1)}`;
   }
 
-  if (digits.startsWith('62')) {
-    return digits
+  if (digits.startsWith("62")) {
+    return digits;
   }
 
-  return digits
+  return digits;
 }
 
 function todayISO() {
-  return new Date().toISOString().slice(0, 10)
+  return new Date().toISOString().slice(0, 10);
 }
 
 function nowISODateTime() {
-  return new Date().toISOString()
+  return new Date().toISOString();
 }
 
 function diffDays(startDate, endDate) {
-  if (!startDate || !endDate) return 0
+  if (!startDate || !endDate) return 0;
 
-  const a = new Date(startDate)
-  const b = new Date(endDate)
+  const a = new Date(startDate);
+  const b = new Date(endDate);
 
-  if (Number.isNaN(a.getTime()) || Number.isNaN(b.getTime())) return 0
+  if (Number.isNaN(a.getTime()) || Number.isNaN(b.getTime())) return 0;
 
-  const ms = b.getTime() - a.getTime()
-  const days = Math.ceil(ms / (1000 * 60 * 60 * 24))
+  const ms = b.getTime() - a.getTime();
+  const days = Math.ceil(ms / (1000 * 60 * 60 * 24));
 
-  return days > 0 ? days : 0
+  return days > 0 ? days : 0;
 }
 
 function rentalDays(startDate, endDate) {
-  const days = diffDays(startDate, endDate)
-  return days > 0 ? days : 1
+  const days = diffDays(startDate, endDate);
+  return days > 0 ? days : 1;
 }
 
 function formatRupiah(value) {
-  return `Rp ${Number(value || 0).toLocaleString('id-ID')}`
+  return `Rp ${Number(value || 0).toLocaleString("id-ID")}`;
 }
 
 function cleanBase64Image(value) {
-  if (!value) return ''
-  if (typeof value !== 'string') return ''
+  if (!value) return "";
+  if (typeof value !== "string") return "";
 
-  const trimmed = value.trim()
+  const trimmed = value.trim();
 
-  if (!trimmed.startsWith('data:image/')) return ''
+  if (!trimmed.startsWith("data:image/")) return "";
 
-  return trimmed
+  return trimmed;
 }
 
 function cleanText(value) {
-  return String(value || '').trim()
+  return String(value || "").trim();
 }
 
 function toPositiveInteger(value, fallback = 1) {
-  const n = Number(value)
+  const n = Number(value);
 
-  if (!Number.isFinite(n)) return fallback
+  if (!Number.isFinite(n)) return fallback;
 
-  const rounded = Math.floor(n)
+  const rounded = Math.floor(n);
 
-  if (rounded < 1) return fallback
+  if (rounded < 1) return fallback;
 
-  return rounded
+  return rounded;
 }
 
 function toNonNegativeNumber(value, fallback = 0) {
-  const n = Number(value)
+  const n = Number(value);
 
-  if (!Number.isFinite(n)) return fallback
+  if (!Number.isFinite(n)) return fallback;
 
-  if (n < 0) return fallback
+  if (n < 0) return fallback;
 
-  return n
+  return n;
 }
 
 function fillTemplate(template, payload) {
-  let text = String(template || '')
+  let text = String(template || "");
 
-  Object.keys(payload || {}).forEach(key => {
-    const val = payload[key] == null ? '' : String(payload[key])
-    text = text.replaceAll(`{{${key}}}`, val)
-  })
+  Object.keys(payload || {}).forEach((key) => {
+    const val = payload[key] == null ? "" : String(payload[key]);
+    text = text.replaceAll(`{{${key}}}`, val);
+  });
 
-  return text
+  return text;
 }
 
 function signToken(user) {
@@ -145,105 +150,107 @@ function signToken(user) {
       id: user.id,
       role: user.role,
       username: user.username,
-      fullName: user.fullName
+      fullName: user.fullName,
     },
     JWT_SECRET,
-    { expiresIn: '10h' }
-  )
+    { expiresIn: "10h" },
+  );
 }
 
 function auth(req, res, next) {
-  const header = req.headers.authorization || ''
-  const token = header.replace('Bearer ', '').trim()
+  const header = req.headers.authorization || "";
+  const token = header.replace("Bearer ", "").trim();
 
-  if (!token) return res.status(401).json({ error: 'No token' })
+  if (!token) return res.status(401).json({ error: "No token" });
 
   try {
-    req.user = jwt.verify(token, JWT_SECRET)
-    next()
+    req.user = jwt.verify(token, JWT_SECRET);
+    next();
   } catch {
-    return res.status(401).json({ error: 'Invalid token' })
+    return res.status(401).json({ error: "Invalid token" });
   }
 }
 
 function isAdmin(req, res, next) {
-  if (req.user?.role !== 'admin') {
-    return res.status(403).json({ error: 'Admin only' })
+  if (req.user?.role !== "admin") {
+    return res.status(403).json({ error: "Admin only" });
   }
 
-  next()
+  next();
 }
 
 function isItemAllowedForType(item, borrowType) {
-  const mode = normalizeServiceMode(item?.serviceMode || item?.service_mode || 'both')
-  const type = normalizeBorrowType(borrowType)
+  const mode = normalizeServiceMode(
+    item?.serviceMode || item?.service_mode || "both",
+  );
+  const type = normalizeBorrowType(borrowType);
 
-  if (mode === 'both') return true
-  if (mode === 'borrow' && type === 'peminjaman') return true
-  if (mode === 'rent' && type === 'penyewaan') return true
+  if (mode === "both") return true;
+  if (mode === "borrow" && type === "peminjaman") return true;
+  if (mode === "rent" && type === "penyewaan") return true;
 
-  return false
+  return false;
 }
 
 function getPgErrorMessage(error) {
-  const code = error?.code
-  const constraint = error?.constraint || ''
+  const code = error?.code;
+  const constraint = error?.constraint || "";
 
-  if (code === '23505') {
-    if (constraint.includes('items_code_key')) {
-      return 'Kode barang sudah digunakan. Gunakan kode barang yang berbeda.'
+  if (code === "23505") {
+    if (constraint.includes("items_code_key")) {
+      return "Kode barang sudah digunakan. Gunakan kode barang yang berbeda.";
     }
 
-    if (constraint.includes('users_username_key')) {
-      return 'Username sudah digunakan.'
+    if (constraint.includes("users_username_key")) {
+      return "Username sudah digunakan.";
     }
 
-    return 'Data sudah ada dan tidak boleh duplikat.'
+    return "Data sudah ada dan tidak boleh duplikat.";
   }
 
-  if (code === '23503') {
-    return 'Data masih terhubung dengan data lain sehingga tidak bisa diproses.'
+  if (code === "23503") {
+    return "Data masih terhubung dengan data lain sehingga tidak bisa diproses.";
   }
 
-  if (code === '23502') {
-    return 'Ada data wajib yang belum diisi.'
+  if (code === "23502") {
+    return "Ada data wajib yang belum diisi.";
   }
 
-  return error?.message || 'Terjadi kesalahan pada server.'
+  return error?.message || "Terjadi kesalahan pada server.";
 }
 
 function getPagination(req, defaultLimit = 10) {
-  const rawPage = Number(req.query.page || 1)
-  const rawLimit = Number(req.query.limit || defaultLimit)
+  const rawPage = Number(req.query.page || 1);
+  const rawLimit = Number(req.query.limit || defaultLimit);
 
-  const allowedLimits = [10, 25, 50, 100]
+  const allowedLimits = [10, 25, 50, 100];
 
-  const page = Number.isFinite(rawPage) && rawPage > 0
-    ? Math.floor(rawPage)
-    : 1
+  const page =
+    Number.isFinite(rawPage) && rawPage > 0 ? Math.floor(rawPage) : 1;
 
-  const limitCandidate = Number.isFinite(rawLimit) && rawLimit > 0
-    ? Math.floor(rawLimit)
-    : defaultLimit
+  const limitCandidate =
+    Number.isFinite(rawLimit) && rawLimit > 0
+      ? Math.floor(rawLimit)
+      : defaultLimit;
 
   const limit = allowedLimits.includes(limitCandidate)
     ? limitCandidate
-    : defaultLimit
+    : defaultLimit;
 
-  const offset = (page - 1) * limit
+  const offset = (page - 1) * limit;
 
   return {
     page,
     limit,
     offset,
-    allowedLimits
-  }
+    allowedLimits,
+  };
 }
 
 function makePaginationResponse({ data, page, limit, total }) {
-  const cleanTotal = Number(total || 0)
-  const cleanLimit = Number(limit || 10)
-  const totalPages = Math.max(Math.ceil(cleanTotal / cleanLimit), 1)
+  const cleanTotal = Number(total || 0);
+  const cleanLimit = Number(limit || 10);
+  const totalPages = Math.max(Math.ceil(cleanTotal / cleanLimit), 1);
 
   return {
     data,
@@ -253,9 +260,9 @@ function makePaginationResponse({ data, page, limit, total }) {
       total: cleanTotal,
       totalPages,
       hasPrev: page > 1,
-      hasNext: page < totalPages
-    }
-  }
+      hasNext: page < totalPages,
+    },
+  };
 }
 
 function mapUserRow(row) {
@@ -267,8 +274,8 @@ function mapUserRow(row) {
     fullName: row.full_name,
     email: row.email,
     status: row.status,
-    joinDate: row.join_date
-  }
+    joinDate: row.join_date,
+  };
 }
 
 function mapItemRow(row) {
@@ -283,8 +290,8 @@ function mapItemRow(row) {
     location: row.location,
     price: Number(row.price || 0),
     image: row.image,
-    serviceMode: normalizeServiceMode(row.service_mode)
-  }
+    serviceMode: normalizeServiceMode(row.service_mode),
+  };
 }
 
 function mapTransactionRow(row) {
@@ -297,9 +304,9 @@ function mapTransactionRow(row) {
     date: row.date,
     userId: row.user_id,
     userName: row.user_name,
-    notes: row.notes || '',
-    totalPrice: Number(row.total_price || 0)
-  }
+    notes: row.notes || "",
+    totalPrice: Number(row.total_price || 0),
+  };
 }
 
 function mapBorrowingRow(row) {
@@ -310,12 +317,12 @@ function mapBorrowingRow(row) {
     itemName: row.item_name,
     borrowerName: row.borrower_name,
     borrowerPhone: row.borrower_phone,
-    borrowerAddress: row.borrower_address || '',
+    borrowerAddress: row.borrower_address || "",
     quantity: Number(row.quantity || 0),
     status: row.status,
-    notes: row.notes || '',
+    notes: row.notes || "",
     submittedAt: row.submitted_at,
-    requestedBorrowDate: row.requested_borrow_date || row.borrow_date || '',
+    requestedBorrowDate: row.requested_borrow_date || row.borrow_date || "",
     approvedAt: row.approved_at,
     borrowDate: row.borrow_date,
     expectedReturn: row.expected_return,
@@ -328,17 +335,17 @@ function mapBorrowingRow(row) {
     returnRequestedAt: row.return_requested_at,
     returnVerifiedAt: row.return_verified_at,
     returnVerifiedBy: row.return_verified_by,
-    returnPhoto: row.return_photo || '',
-    conditionOnReturn: row.condition_on_return || '',
-    returnNotes: row.return_notes || '',
-    paymentProof: row.payment_proof || '',
-    paymentProofName: row.payment_proof_name || '',
+    returnPhoto: row.return_photo || "",
+    conditionOnReturn: row.condition_on_return || "",
+    returnNotes: row.return_notes || "",
+    paymentProof: row.payment_proof || "",
+    paymentProofName: row.payment_proof_name || "",
     paymentStatus: row.payment_status || null,
     whatsappStatus: row.whatsapp_status || null,
     whatsappResponse: row.whatsapp_response || null,
     createdAt: row.created_at,
-    updatedAt: row.updated_at
-  }
+    updatedAt: row.updated_at,
+  };
 }
 
 function mapPublicReturnRow(row) {
@@ -351,36 +358,36 @@ function mapPublicReturnRow(row) {
     borrowType: normalizeBorrowType(row.borrow_type),
     returnerName: row.returner_name,
     returnerPhone: row.returner_phone,
-    conditionOnReturn: row.condition_on_return || 'Baik',
-    returnNotes: row.return_notes || '',
-    returnPhoto: row.return_photo || '',
+    conditionOnReturn: row.condition_on_return || "Baik",
+    returnNotes: row.return_notes || "",
+    returnPhoto: row.return_photo || "",
     submittedAt: row.submitted_at,
     status: row.status,
     verifiedAt: row.verified_at,
     verifiedBy: row.verified_by,
     createdAt: row.created_at,
-    updatedAt: row.updated_at
-  }
+    updatedAt: row.updated_at,
+  };
 }
 
 function mapPublicConfigRow(row) {
   return {
-    rentalQrisLink: row?.rental_qris_link || '',
-    rentalQrisImage: row?.rental_qris_image || '',
-    adminWhatsappNumber: row?.admin_whatsapp_number || '',
-    whatsappApiUrl: row?.whatsapp_api_url || '',
-    whatsappApiToken: row?.whatsapp_api_token || '',
+    rentalQrisLink: row?.rental_qris_link || "",
+    rentalQrisImage: row?.rental_qris_image || "",
+    adminWhatsappNumber: row?.admin_whatsapp_number || "",
+    whatsappApiUrl: row?.whatsapp_api_url || "",
+    whatsappApiToken: row?.whatsapp_api_token || "",
     whatsappMessageTemplate:
       row?.whatsapp_message_template ||
-      'Halo Admin, ada pengajuan penyewaan baru atas nama {{name}} untuk barang {{itemName}} sejumlah {{quantity}} unit. Total sewa {{rentalTotalPriceFormatted}} untuk {{rentalDurationDays}} hari. Bukti pembayaran sudah diupload.'
-  }
+      "Halo Admin, ada pengajuan penyewaan baru atas nama {{name}} untuk barang {{itemName}} sejumlah {{quantity}} unit. Total sewa {{rentalTotalPriceFormatted}} untuk {{rentalDurationDays}} hari. Bukti pembayaran sudah diupload.",
+  };
 }
 
 async function ensureColumn(tableName, columnName, definition) {
   await pool.query(`
     ALTER TABLE ${tableName}
     ADD COLUMN IF NOT EXISTS ${columnName} ${definition}
-  `)
+  `);
 }
 
 async function initDatabase() {
@@ -489,10 +496,18 @@ async function initDatabase() {
       whatsapp_api_token TEXT,
       whatsapp_message_template TEXT
     );
-  `)
+  `);
 
-  await ensureColumn('borrowings', 'rental_duration_days', 'INTEGER NOT NULL DEFAULT 0')
-  await ensureColumn('borrowings', 'rental_total_price', 'BIGINT NOT NULL DEFAULT 0')
+  await ensureColumn(
+    "borrowings",
+    "rental_duration_days",
+    "INTEGER NOT NULL DEFAULT 0",
+  );
+  await ensureColumn(
+    "borrowings",
+    "rental_total_price",
+    "BIGINT NOT NULL DEFAULT 0",
+  );
 
   await pool.query(
     `
@@ -506,8 +521,16 @@ async function initDatabase() {
       status = EXCLUDED.status,
       join_date = EXCLUDED.join_date
     `,
-    ['admin', 'admin', 'admin', 'Administrator', 'admin@inventory.com', 'active', '2024-01-15']
-  )
+    [
+      "admin",
+      "admin",
+      "admin",
+      "Administrator",
+      "admin@inventory.com",
+      "active",
+      "2024-01-15",
+    ],
+  );
 
   await pool.query(
     `
@@ -526,27 +549,31 @@ async function initDatabase() {
     `,
     [
       1,
-      'https://example.com/qris',
-      '',
-      '6282288277920',
-      '',
-      '',
-      'Halo Admin, ada pengajuan penyewaan baru atas nama {{name}} untuk barang {{itemName}} sejumlah {{quantity}} unit. Total sewa {{rentalTotalPriceFormatted}} untuk {{rentalDurationDays}} hari. Bukti pembayaran sudah diupload.'
-    ]
-  )
+      "https://example.com/qris",
+      "",
+      "6282288277920",
+      "",
+      "",
+      "Halo Admin, ada pengajuan penyewaan baru atas nama {{name}} untuk barang {{itemName}} sejumlah {{quantity}} unit. Total sewa {{rentalTotalPriceFormatted}} untuk {{rentalDurationDays}} hari. Bukti pembayaran sudah diupload.",
+    ],
+  );
 
-  const configResult = await pool.query('SELECT * FROM public_config WHERE id = 1 LIMIT 1')
-  const config = configResult.rows[0]
+  const configResult = await pool.query(
+    "SELECT * FROM public_config WHERE id = 1 LIMIT 1",
+  );
+  const config = configResult.rows[0];
 
   if (config && !config.admin_whatsapp_number) {
     await pool.query(
-      'UPDATE public_config SET admin_whatsapp_number = $1 WHERE id = 1',
-      ['6282288277920']
-    )
+      "UPDATE public_config SET admin_whatsapp_number = $1 WHERE id = 1",
+      ["6282288277920"],
+    );
   }
 
-  const itemCountResult = await pool.query('SELECT COUNT(*)::int AS total FROM items')
-  const totalItems = itemCountResult.rows[0]?.total || 0
+  const itemCountResult = await pool.query(
+    "SELECT COUNT(*)::int AS total FROM items",
+  );
+  const totalItems = itemCountResult.rows[0]?.total || 0;
 
   if (totalItems === 0) {
     await pool.query(
@@ -561,18 +588,74 @@ async function initDatabase() {
         ($51,$52,$53,$54,$55,$56,$57,$58,$59,$60)
       `,
       [
-        'Laptop Ngawi', 'LPT-001', 'Elektronik', 5, 2, 'Baik', 'Gudang A', 25000000, 'https://images.unsplash.com/photo-1593642632823-8f785ba67e45?w=400', 'both',
-        'Proyektor Amba', 'PRJ-001', 'Elektronik', 3, 1, 'Baik', 'Gudang B', 8500000, 'https://images.unsplash.com/photo-1519558260268-cde7e03a0152?w=400', 'both',
-        'Kursi Kantor', 'FRN-001', 'Furniture', 20, 5, 'Baik', 'Gudang A', 3500000, 'https://images.unsplash.com/photo-1592078615290-033ee584e267?w=400', 'borrow',
-        'Lemari Razan', 'FRN-002', 'Furniture', 5, 2, 'Baik', 'Gudang C', 5200000, 'https://images.unsplash.com/photo-1595428774223-ef52624120d2?w=400', 'borrow',
-        'Printer', 'PRT-001', 'Elektronik', 8, 3, 'Baik', 'Gudang B', 4200000, 'https://images.unsplash.com/photo-1612815154858-60aa4c59eaa6?w=400', 'rent',
-        'Mouse Logitech', 'ACC-001', 'Aksesoris', 15, 10, 'Baik', 'Gudang A', 350000, 'https://images.unsplash.com/photo-1527814050087-3793815479db?w=400', 'both'
-      ]
-    )
+        "Laptop Ngawi",
+        "LPT-001",
+        "Elektronik",
+        5,
+        2,
+        "Baik",
+        "Gudang A",
+        25000000,
+        "https://images.unsplash.com/photo-1593642632823-8f785ba67e45?w=400",
+        "both",
+        "Proyektor Amba",
+        "PRJ-001",
+        "Elektronik",
+        3,
+        1,
+        "Baik",
+        "Gudang B",
+        8500000,
+        "https://images.unsplash.com/photo-1519558260268-cde7e03a0152?w=400",
+        "both",
+        "Kursi Kantor",
+        "FRN-001",
+        "Furniture",
+        20,
+        5,
+        "Baik",
+        "Gudang A",
+        3500000,
+        "https://images.unsplash.com/photo-1592078615290-033ee584e267?w=400",
+        "borrow",
+        "Lemari Razan",
+        "FRN-002",
+        "Furniture",
+        5,
+        2,
+        "Baik",
+        "Gudang C",
+        5200000,
+        "https://images.unsplash.com/photo-1595428774223-ef52624120d2?w=400",
+        "borrow",
+        "Printer",
+        "PRT-001",
+        "Elektronik",
+        8,
+        3,
+        "Baik",
+        "Gudang B",
+        4200000,
+        "https://images.unsplash.com/photo-1612815154858-60aa4c59eaa6?w=400",
+        "rent",
+        "Mouse Logitech",
+        "ACC-001",
+        "Aksesoris",
+        15,
+        10,
+        "Baik",
+        "Gudang A",
+        350000,
+        "https://images.unsplash.com/photo-1527814050087-3793815479db?w=400",
+        "both",
+      ],
+    );
   }
 
-  const transactionCountResult = await pool.query('SELECT COUNT(*)::int AS total FROM transactions')
-  const totalTransactions = transactionCountResult.rows[0]?.total || 0
+  const transactionCountResult = await pool.query(
+    "SELECT COUNT(*)::int AS total FROM transactions",
+  );
+  const totalTransactions = transactionCountResult.rows[0]?.total || 0;
 
   if (totalTransactions === 0) {
     await pool.query(
@@ -580,84 +663,107 @@ async function initDatabase() {
       INSERT INTO transactions (item_id, item_name, type, quantity, date, user_id, user_name, notes, total_price)
       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
       `,
-      [1, 'Laptop Ngawi', 'in', 5, '2025-10-01', 1, 'Administrator', 'Pembelian baru dari supplier', 125000000]
-    )
+      [
+        1,
+        "Laptop Ngawi",
+        "in",
+        5,
+        "2025-10-01",
+        1,
+        "Administrator",
+        "Pembelian baru dari supplier",
+        125000000,
+      ],
+    );
   }
 }
 
 async function getUsers() {
-  const result = await pool.query('SELECT * FROM users ORDER BY id ASC')
-  return result.rows.map(mapUserRow)
+  const result = await pool.query("SELECT * FROM users ORDER BY id ASC");
+  return result.rows.map(mapUserRow);
 }
 
 async function getItems() {
-  const result = await pool.query('SELECT * FROM items ORDER BY id ASC')
-  return result.rows.map(mapItemRow)
+  const result = await pool.query("SELECT * FROM items ORDER BY id ASC");
+  return result.rows.map(mapItemRow);
 }
 
 async function getTransactions() {
-  const result = await pool.query('SELECT * FROM transactions ORDER BY id DESC')
-  return result.rows.map(mapTransactionRow)
+  const result = await pool.query(
+    "SELECT * FROM transactions ORDER BY id DESC",
+  );
+  return result.rows.map(mapTransactionRow);
 }
 
 async function getBorrowings() {
-  const result = await pool.query('SELECT * FROM borrowings ORDER BY id DESC')
-  return result.rows.map(mapBorrowingRow)
+  const result = await pool.query("SELECT * FROM borrowings ORDER BY id DESC");
+  return result.rows.map(mapBorrowingRow);
 }
 
 async function getPublicReturns() {
-  const result = await pool.query('SELECT * FROM public_returns ORDER BY id DESC')
-  return result.rows.map(mapPublicReturnRow)
+  const result = await pool.query(
+    "SELECT * FROM public_returns ORDER BY id DESC",
+  );
+  return result.rows.map(mapPublicReturnRow);
 }
 
 async function getPublicConfig() {
-  const result = await pool.query('SELECT * FROM public_config WHERE id = 1 LIMIT 1')
-  return mapPublicConfigRow(result.rows[0])
+  const result = await pool.query(
+    "SELECT * FROM public_config WHERE id = 1 LIMIT 1",
+  );
+  return mapPublicConfigRow(result.rows[0]);
 }
 
 async function findBorrowingRowById(id) {
-  const result = await pool.query('SELECT * FROM borrowings WHERE id = $1 LIMIT 1', [Number(id)])
-  return result.rows[0] || null
+  const result = await pool.query(
+    "SELECT * FROM borrowings WHERE id = $1 LIMIT 1",
+    [Number(id)],
+  );
+  return result.rows[0] || null;
 }
 
 async function findItemRowById(id) {
-  const result = await pool.query('SELECT * FROM items WHERE id = $1 LIMIT 1', [Number(id)])
-  return result.rows[0] || null
+  const result = await pool.query("SELECT * FROM items WHERE id = $1 LIMIT 1", [
+    Number(id),
+  ]);
+  return result.rows[0] || null;
 }
 
 async function sendWhatsappNotification({ config, borrowing }) {
-  const apiUrl = String(config?.whatsappApiUrl || '').trim()
-  const apiToken = String(config?.whatsappApiToken || '').trim()
-  const adminWhatsappNumber = normalizeWhatsappNumber(config?.adminWhatsappNumber || '')
+  const apiUrl = String(config?.whatsappApiUrl || "").trim();
+  const apiToken = String(config?.whatsappApiToken || "").trim();
+  const adminWhatsappNumber = normalizeWhatsappNumber(
+    config?.adminWhatsappNumber || "",
+  );
 
   if (!apiUrl || !adminWhatsappNumber) {
     return {
       success: false,
       skipped: true,
-      message: 'WhatsApp API belum dikonfigurasi lengkap'
-    }
+      message: "WhatsApp API belum dikonfigurasi lengkap",
+    };
   }
 
   const message = fillTemplate(config?.whatsappMessageTemplate, {
-    name: borrowing.borrowerName || '-',
-    itemName: borrowing.itemName || '-',
+    name: borrowing.borrowerName || "-",
+    itemName: borrowing.itemName || "-",
     quantity: borrowing.quantity || 0,
-    type: borrowing.borrowType || '-',
-    expectedReturn: borrowing.expectedReturn || '-',
+    type: borrowing.borrowType || "-",
+    expectedReturn: borrowing.expectedReturn || "-",
     rentalDurationDays: borrowing.rentalDurationDays || 0,
     rentalTotalPrice: borrowing.rentalTotalPrice || 0,
-    rentalTotalPriceFormatted: formatRupiah(borrowing.rentalTotalPrice || 0)
-  })
+    rentalTotalPriceFormatted: formatRupiah(borrowing.rentalTotalPrice || 0),
+  });
 
   try {
-    const headers = { 'Content-Type': 'application/json' }
+    const headers = { "Content-Type": "application/json" };
 
     if (apiToken) {
-      headers.Authorization = `Bearer ${apiToken}`
+      headers.Authorization = `Bearer ${apiToken}`;
     }
 
     const response = await fetch(apiUrl, {
-      method: 'POST',
+      method: "POST",
       headers,
       body: JSON.stringify({
         to: adminWhatsappNumber,
@@ -672,32 +778,34 @@ async function sendWhatsappNotification({ config, borrowing }) {
         borrowType: borrowing.borrowType,
         rentalDurationDays: borrowing.rentalDurationDays || 0,
         rentalTotalPrice: borrowing.rentalTotalPrice || 0,
-        rentalTotalPriceFormatted: formatRupiah(borrowing.rentalTotalPrice || 0),
-        paymentProof: borrowing.paymentProof || '',
-        paymentProofName: borrowing.paymentProofName || ''
-      })
-    })
+        rentalTotalPriceFormatted: formatRupiah(
+          borrowing.rentalTotalPrice || 0,
+        ),
+        paymentProof: borrowing.paymentProof || "",
+        paymentProofName: borrowing.paymentProofName || "",
+      }),
+    });
 
-    let body = null
+    let body = null;
 
     try {
-      body = await response.json()
+      body = await response.json();
     } catch {
-      body = null
+      body = null;
     }
 
     return {
       success: response.ok,
       skipped: false,
       status: response.status,
-      body
-    }
+      body,
+    };
   } catch (error) {
     return {
       success: false,
       skipped: false,
-      message: error?.message || 'Gagal menghubungi WhatsApp API'
-    }
+      message: error?.message || "Gagal menghubungi WhatsApp API",
+    };
   }
 }
 
@@ -708,18 +816,18 @@ async function createPublicReturnRequest({
   returnerPhone,
   conditionOnReturn,
   returnNotes,
-  returnPhoto
+  returnPhoto,
 }) {
-  const normalizedReturnPhoto = cleanBase64Image(returnPhoto)
+  const normalizedReturnPhoto = cleanBase64Image(returnPhoto);
 
-  let borrowingRow = null
+  let borrowingRow = null;
 
   if (borrowingId) {
     const result = await pool.query(
-      'SELECT * FROM borrowings WHERE id = $1 LIMIT 1',
-      [Number(borrowingId)]
-    )
-    borrowingRow = result.rows[0] || null
+      "SELECT * FROM borrowings WHERE id = $1 LIMIT 1",
+      [Number(borrowingId)],
+    );
+    borrowingRow = result.rows[0] || null;
   }
 
   if (!borrowingRow && itemId) {
@@ -732,49 +840,52 @@ async function createPublicReturnRequest({
       ORDER BY COALESCE(updated_at, created_at, NOW()) DESC, id DESC
       LIMIT 1
       `,
-      [Number(itemId)]
-    )
-    borrowingRow = result.rows[0] || null
+      [Number(itemId)],
+    );
+    borrowingRow = result.rows[0] || null;
   }
 
   if (!borrowingRow) {
     return {
       ok: false,
       status: 400,
-      error: 'Data peminjaman aktif tidak ditemukan. Pilih barang beserta nama peminjam yang sedang aktif.'
-    }
+      error:
+        "Data peminjaman aktif tidak ditemukan. Pilih barang beserta nama peminjam yang sedang aktif.",
+    };
   }
 
-  if (borrowingRow.status !== 'borrowed') {
+  if (borrowingRow.status !== "borrowed") {
     return {
       ok: false,
       status: 400,
-      error: 'Barang yang dipilih sudah tidak berada dalam status dipinjam / disewa.'
-    }
+      error:
+        "Barang yang dipilih sudah tidak berada dalam status dipinjam / disewa.",
+    };
   }
 
-  if (borrowingRow.return_request_status === 'pending') {
+  if (borrowingRow.return_request_status === "pending") {
     return {
       ok: false,
       status: 400,
-      error: 'Pengembalian untuk data ini sudah diajukan dan sedang menunggu verifikasi admin.'
-    }
+      error:
+        "Pengembalian untuk data ini sudah diajukan dan sedang menunggu verifikasi admin.",
+    };
   }
 
   if (!cleanText(returnerName) || !cleanText(returnerPhone)) {
     return {
       ok: false,
       status: 400,
-      error: 'Nama pengembali dan no HP wajib diisi.'
-    }
+      error: "Nama pengembali dan no HP wajib diisi.",
+    };
   }
 
   if (!normalizedReturnPhoto) {
     return {
       ok: false,
       status: 400,
-      error: 'Foto barang yang dikembalikan wajib diupload.'
-    }
+      error: "Foto barang yang dikembalikan wajib diupload.",
+    };
   }
 
   const insertReturn = await pool.query(
@@ -803,24 +914,24 @@ async function createPublicReturnRequest({
     RETURNING *
     `,
     [
-      'return-request',
+      "return-request",
       borrowingRow.id,
       borrowingRow.item_id,
       borrowingRow.item_name,
       borrowingRow.borrow_type,
       cleanText(returnerName),
       cleanText(returnerPhone),
-      conditionOnReturn || 'Baik',
-      returnNotes || '',
+      conditionOnReturn || "Baik",
+      returnNotes || "",
       normalizedReturnPhoto,
       todayISO(),
-      'pending_verification',
+      "pending_verification",
       null,
-      null
-    ]
-  )
+      null,
+    ],
+  );
 
-  const returnRow = insertReturn.rows[0]
+  const returnRow = insertReturn.rows[0];
 
   await pool.query(
     `
@@ -837,67 +948,72 @@ async function createPublicReturnRequest({
     `,
     [
       returnRow.id,
-      'pending',
+      "pending",
       todayISO(),
       normalizedReturnPhoto,
-      conditionOnReturn || 'Baik',
-      returnNotes || '',
-      borrowingRow.id
-    ]
-  )
+      conditionOnReturn || "Baik",
+      returnNotes || "",
+      borrowingRow.id,
+    ],
+  );
 
-  const updatedBorrowing = await findBorrowingRowById(borrowingRow.id)
+  const updatedBorrowing = await findBorrowingRowById(borrowingRow.id);
 
   return {
     ok: true,
     status: 200,
     payload: {
       success: true,
-      message: 'Permintaan pengembalian berhasil dikirim dan menunggu verifikasi admin',
+      message:
+        "Permintaan pengembalian berhasil dikirim dan menunggu verifikasi admin",
       borrowing: mapBorrowingRow(updatedBorrowing),
-      returnRow: mapPublicReturnRow(returnRow)
-    }
-  }
+      returnRow: mapPublicReturnRow(returnRow),
+    },
+  };
 }
 
-async function verifyBorrowingReturnById({ borrowingId, adminName, adminUserId }) {
-  const borrowingRow = await findBorrowingRowById(borrowingId)
+async function verifyBorrowingReturnById({
+  borrowingId,
+  adminName,
+  adminUserId,
+}) {
+  const borrowingRow = await findBorrowingRowById(borrowingId);
 
   if (!borrowingRow) {
     return {
       ok: false,
       status: 404,
-      error: 'Data pengajuan tidak ditemukan'
-    }
+      error: "Data pengajuan tidak ditemukan",
+    };
   }
 
-  if (borrowingRow.status !== 'borrowed') {
+  if (borrowingRow.status !== "borrowed") {
     return {
       ok: false,
       status: 400,
-      error: 'Status tidak valid untuk verifikasi pengembalian'
-    }
+      error: "Status tidak valid untuk verifikasi pengembalian",
+    };
   }
 
-  if (borrowingRow.return_request_status !== 'pending') {
+  if (borrowingRow.return_request_status !== "pending") {
     return {
       ok: false,
       status: 400,
-      error: 'Belum ada form pengembalian yang diajukan'
-    }
+      error: "Belum ada form pengembalian yang diajukan",
+    };
   }
 
-  const itemRow = await findItemRowById(borrowingRow.item_id)
+  const itemRow = await findItemRowById(borrowingRow.item_id);
 
   if (!itemRow) {
     return {
       ok: false,
       status: 404,
-      error: 'Barang tidak ditemukan'
-    }
+      error: "Barang tidak ditemukan",
+    };
   }
 
-  await pool.query('BEGIN')
+  await pool.query("BEGIN");
 
   try {
     await pool.query(
@@ -916,14 +1032,14 @@ async function verifyBorrowingReturnById({ borrowingId, adminName, adminUserId }
       WHERE id = $6
       `,
       [
-        'returned',
+        "returned",
         todayISO(),
-        'verified',
+        "verified",
         todayISO(),
         adminName,
-        borrowingRow.id
-      ]
-    )
+        borrowingRow.id,
+      ],
+    );
 
     await pool.query(
       `
@@ -931,8 +1047,8 @@ async function verifyBorrowingReturnById({ borrowingId, adminName, adminUserId }
       SET stock = stock + $1
       WHERE id = $2
       `,
-      [Number(borrowingRow.quantity || 0), borrowingRow.item_id]
-    )
+      [Number(borrowingRow.quantity || 0), borrowingRow.item_id],
+    );
 
     if (borrowingRow.linked_return_id) {
       await pool.query(
@@ -946,8 +1062,8 @@ async function verifyBorrowingReturnById({ borrowingId, adminName, adminUserId }
           updated_at = NOW()
         WHERE id = $4
         `,
-        ['verified', todayISO(), adminName, borrowingRow.linked_return_id]
-      )
+        ["verified", todayISO(), adminName, borrowingRow.linked_return_id],
+      );
     }
 
     const transactionInsert = await pool.query(
@@ -969,93 +1085,100 @@ async function verifyBorrowingReturnById({ borrowingId, adminName, adminUserId }
       [
         borrowingRow.item_id,
         borrowingRow.item_name,
-        'in',
+        "in",
         Number(borrowingRow.quantity || 0),
         todayISO(),
         adminUserId,
         adminName,
-        borrowingRow.borrow_type === 'penyewaan'
-          ? 'Pengembalian penyewaan diverifikasi admin'
-          : 'Pengembalian peminjaman diverifikasi admin',
-        0
-      ]
-    )
+        borrowingRow.borrow_type === "penyewaan"
+          ? "Pengembalian penyewaan diverifikasi admin"
+          : "Pengembalian peminjaman diverifikasi admin",
+        0,
+      ],
+    );
 
-    await pool.query('COMMIT')
+    await pool.query("COMMIT");
 
-    const updatedBorrowing = await findBorrowingRowById(borrowingRow.id)
+    const updatedBorrowing = await findBorrowingRowById(borrowingRow.id);
 
     return {
       ok: true,
       status: 200,
       payload: {
         success: true,
-        message: 'Pengembalian berhasil diverifikasi',
+        message: "Pengembalian berhasil diverifikasi",
         borrowing: mapBorrowingRow(updatedBorrowing),
-        transaction: mapTransactionRow(transactionInsert.rows[0])
-      }
-    }
+        transaction: mapTransactionRow(transactionInsert.rows[0]),
+      },
+    };
   } catch (error) {
-    await pool.query('ROLLBACK')
+    await pool.query("ROLLBACK");
 
     return {
       ok: false,
       status: 500,
-      error: getPgErrorMessage(error)
-    }
+      error: getPgErrorMessage(error),
+    };
   }
 }
 
 async function bootstrapMysqlConnection() {
   try {
-    const status = await testMysqlConnection()
-    console.log('PostgreSQL connected:', status)
+    const status = await testMysqlConnection();
+    console.log("PostgreSQL connected:", status);
   } catch (error) {
-    console.error('PostgreSQL connection failed:', error?.message || error)
+    console.error("PostgreSQL connection failed:", error?.message || error);
   }
 }
 
-app.get('/api/db-status', async (_req, res) => {
+app.get("/api/db-status", async (_req, res) => {
   try {
-    const result = await pool.query('SELECT current_database() AS database_name, NOW() AS server_time')
+    const result = await pool.query(
+      "SELECT current_database() AS database_name, NOW() AS server_time",
+    );
 
     return res.json({
       success: true,
-      message: 'Koneksi database PostgreSQL berhasil',
-      database: result?.rows?.[0]?.database_name || process.env.DB_NAME || 'inventory',
+      message: "Koneksi database PostgreSQL berhasil",
+      database:
+        result?.rows?.[0]?.database_name || process.env.DB_NAME || "inventory",
       serverTime: result?.rows?.[0]?.server_time || null,
-      host: process.env.DB_HOST || 'localhost',
-      port: Number(process.env.DB_PORT || 5432)
-    })
+      host: process.env.DB_HOST || "localhost",
+      port: Number(process.env.DB_PORT || 5432),
+    });
   } catch (error) {
     return res.status(500).json({
       success: false,
-      message: 'Koneksi database PostgreSQL gagal',
-      error: getPgErrorMessage(error)
-    })
+      message: "Koneksi database PostgreSQL gagal",
+      error: getPgErrorMessage(error),
+    });
   }
-})
+});
 
-app.get('/api/debug/users', async (_req, res) => {
-  const users = await getUsers()
+app.get("/api/debug/users", async (_req, res) => {
+  const users = await getUsers();
 
-  res.json(users.map(u => ({
-    id: u.id,
-    username: u.username,
-    password: u.password,
-    role: u.role,
-    fullName: u.fullName,
-    email: u.email
-  })))
-})
+  res.json(
+    users.map((u) => ({
+      id: u.id,
+      username: u.username,
+      password: u.password,
+      role: u.role,
+      fullName: u.fullName,
+      email: u.email,
+    })),
+  );
+});
 
-app.post('/api/auth/login', async (req, res) => {
+app.post("/api/auth/login", async (req, res) => {
   try {
-    const { username, password } = req.body
-    const loginValue = cleanText(username)
+    const { username, password } = req.body;
+    const loginValue = cleanText(username);
 
     if (!loginValue || !password) {
-      return res.status(400).json({ error: 'Username/email dan password wajib diisi' })
+      return res
+        .status(400)
+        .json({ error: "Username/email dan password wajib diisi" });
     }
 
     const result = await pool.query(
@@ -1066,21 +1189,23 @@ app.post('/api/auth/login', async (req, res) => {
         AND password = $2
       LIMIT 1
       `,
-      [loginValue, String(password || '')]
-    )
+      [loginValue, String(password || "")],
+    );
 
-    const userRow = result.rows[0]
+    const userRow = result.rows[0];
 
     if (!userRow) {
-      return res.status(401).json({ error: 'Username/email atau password admin salah' })
+      return res
+        .status(401)
+        .json({ error: "Username/email atau password admin salah" });
     }
 
-    if (userRow.role !== 'admin') {
-      return res.status(403).json({ error: 'Login hanya untuk admin' })
+    if (userRow.role !== "admin") {
+      return res.status(403).json({ error: "Login hanya untuk admin" });
     }
 
-    const user = mapUserRow(userRow)
-    const token = signToken(user)
+    const user = mapUserRow(userRow);
+    const token = signToken(user);
 
     return res.json({
       token,
@@ -1089,59 +1214,71 @@ app.post('/api/auth/login', async (req, res) => {
         username: user.username,
         role: user.role,
         fullName: user.fullName,
-        email: user.email
-      }
-    })
+        email: user.email,
+      },
+    });
   } catch (error) {
-    console.error('Login error:', error)
+    console.error("Login error:", error);
 
     return res.status(500).json({
-      error: getPgErrorMessage(error)
-    })
+      error: getPgErrorMessage(error),
+    });
   }
-})
+});
 
-app.post('/api/auth/change-password', auth, isAdmin, async (req, res) => {
+app.post("/api/auth/change-password", auth, isAdmin, async (req, res) => {
   try {
-    const { currentPassword, newPassword } = req.body
+    const { currentPassword, newPassword } = req.body;
 
     if (!currentPassword || !newPassword) {
-      return res.status(400).json({ success: false, message: 'Invalid payload' })
+      return res
+        .status(400)
+        .json({ success: false, message: "Invalid payload" });
     }
 
-    const currentUser = await pool.query('SELECT * FROM users WHERE id = $1 LIMIT 1', [req.user.id])
-    const user = currentUser.rows[0]
+    const currentUser = await pool.query(
+      "SELECT * FROM users WHERE id = $1 LIMIT 1",
+      [req.user.id],
+    );
+    const user = currentUser.rows[0];
 
     if (!user) {
-      return res.status(404).json({ success: false, message: 'User not found' })
+      return res
+        .status(404)
+        .json({ success: false, message: "User not found" });
     }
 
     if (user.password !== currentPassword) {
-      return res.status(400).json({ success: false, message: 'Password saat ini salah' })
+      return res
+        .status(400)
+        .json({ success: false, message: "Password saat ini salah" });
     }
 
-    await pool.query('UPDATE users SET password = $1 WHERE id = $2', [newPassword, req.user.id])
+    await pool.query("UPDATE users SET password = $1 WHERE id = $2", [
+      newPassword,
+      req.user.id,
+    ]);
 
-    return res.json({ success: true })
+    return res.json({ success: true });
   } catch (error) {
     return res.status(500).json({
       success: false,
-      message: getPgErrorMessage(error)
-    })
+      message: getPgErrorMessage(error),
+    });
   }
-})
+});
 
-app.get('/api/public-config', async (_req, res) => {
+app.get("/api/public-config", async (_req, res) => {
   try {
-    res.json(await getPublicConfig())
+    res.json(await getPublicConfig());
   } catch (error) {
-    res.status(500).json({ error: getPgErrorMessage(error) })
+    res.status(500).json({ error: getPgErrorMessage(error) });
   }
-})
+});
 
-app.put('/api/public-config/qris', auth, isAdmin, async (req, res) => {
+app.put("/api/public-config/qris", auth, isAdmin, async (req, res) => {
   try {
-    const current = await getPublicConfig()
+    const current = await getPublicConfig();
 
     const {
       rentalQrisLink,
@@ -1149,18 +1286,21 @@ app.put('/api/public-config/qris', auth, isAdmin, async (req, res) => {
       adminWhatsappNumber,
       whatsappApiUrl,
       whatsappApiToken,
-      whatsappMessageTemplate
-    } = req.body
+      whatsappMessageTemplate,
+    } = req.body;
 
     const updated = {
       ...current,
-      rentalQrisLink: rentalQrisLink ?? current.rentalQrisLink ?? '',
-      rentalQrisImage: rentalQrisImage ?? current.rentalQrisImage ?? '',
-      adminWhatsappNumber: normalizeWhatsappNumber(adminWhatsappNumber ?? current.adminWhatsappNumber ?? ''),
-      whatsappApiUrl: whatsappApiUrl ?? current.whatsappApiUrl ?? '',
-      whatsappApiToken: whatsappApiToken ?? current.whatsappApiToken ?? '',
-      whatsappMessageTemplate: whatsappMessageTemplate ?? current.whatsappMessageTemplate ?? ''
-    }
+      rentalQrisLink: rentalQrisLink ?? current.rentalQrisLink ?? "",
+      rentalQrisImage: rentalQrisImage ?? current.rentalQrisImage ?? "",
+      adminWhatsappNumber: normalizeWhatsappNumber(
+        adminWhatsappNumber ?? current.adminWhatsappNumber ?? "",
+      ),
+      whatsappApiUrl: whatsappApiUrl ?? current.whatsappApiUrl ?? "",
+      whatsappApiToken: whatsappApiToken ?? current.whatsappApiToken ?? "",
+      whatsappMessageTemplate:
+        whatsappMessageTemplate ?? current.whatsappMessageTemplate ?? "",
+    };
 
     await pool.query(
       `
@@ -1180,46 +1320,47 @@ app.put('/api/public-config/qris', auth, isAdmin, async (req, res) => {
         updated.adminWhatsappNumber,
         updated.whatsappApiUrl,
         updated.whatsappApiToken,
-        updated.whatsappMessageTemplate
-      ]
-    )
+        updated.whatsappMessageTemplate,
+      ],
+    );
 
-    res.json(updated)
+    res.json(updated);
   } catch (error) {
-    res.status(500).json({ error: getPgErrorMessage(error) })
+    res.status(500).json({ error: getPgErrorMessage(error) });
   }
-})
+});
 
-app.put('/api/public-config/rental-qr', auth, isAdmin, async (req, res) => {
+app.put("/api/public-config/rental-qr", auth, isAdmin, async (req, res) => {
   try {
-    const current = await getPublicConfig()
-    const { rentalQrLink, rentalQrisLink } = req.body
+    const current = await getPublicConfig();
+    const { rentalQrLink, rentalQrisLink } = req.body;
 
-    const updatedLink = rentalQrisLink || rentalQrLink || current.rentalQrisLink || ''
+    const updatedLink =
+      rentalQrisLink || rentalQrLink || current.rentalQrisLink || "";
 
     await pool.query(
-      'UPDATE public_config SET rental_qris_link = $1 WHERE id = 1',
-      [updatedLink]
-    )
+      "UPDATE public_config SET rental_qris_link = $1 WHERE id = 1",
+      [updatedLink],
+    );
 
     res.json({
       ...current,
-      rentalQrisLink: updatedLink
-    })
+      rentalQrisLink: updatedLink,
+    });
   } catch (error) {
-    res.status(500).json({ error: getPgErrorMessage(error) })
+    res.status(500).json({ error: getPgErrorMessage(error) });
   }
-})
+});
 
-app.get('/api/items', async (_req, res) => {
+app.get("/api/items", async (_req, res) => {
   try {
-    res.json(await getItems())
+    res.json(await getItems());
   } catch (error) {
-    res.status(500).json({ error: getPgErrorMessage(error) })
+    res.status(500).json({ error: getPgErrorMessage(error) });
   }
-})
+});
 
-app.post('/api/items', auth, isAdmin, async (req, res) => {
+app.post("/api/items", auth, isAdmin, async (req, res) => {
   try {
     const payload = {
       name: cleanText(req.body.name),
@@ -1227,31 +1368,31 @@ app.post('/api/items', auth, isAdmin, async (req, res) => {
       category: cleanText(req.body.category),
       stock: toNonNegativeNumber(req.body.stock, 0),
       minStock: toNonNegativeNumber(req.body.minStock, 0),
-      condition: cleanText(req.body.condition) || 'Baik',
+      condition: cleanText(req.body.condition) || "Baik",
       location: cleanText(req.body.location),
       price: toNonNegativeNumber(req.body.price, 0),
       image: cleanText(req.body.image),
-      serviceMode: normalizeServiceMode(req.body.serviceMode || 'both')
-    }
+      serviceMode: normalizeServiceMode(req.body.serviceMode || "both"),
+    };
 
     if (!payload.name) {
-      return res.status(400).json({ error: 'Nama barang wajib diisi' })
+      return res.status(400).json({ error: "Nama barang wajib diisi" });
     }
 
     if (!payload.code) {
-      return res.status(400).json({ error: 'Kode barang wajib diisi' })
+      return res.status(400).json({ error: "Kode barang wajib diisi" });
     }
 
     if (!payload.category) {
-      return res.status(400).json({ error: 'Kategori barang wajib diisi' })
+      return res.status(400).json({ error: "Kategori barang wajib diisi" });
     }
 
     if (!payload.location) {
-      return res.status(400).json({ error: 'Lokasi barang wajib diisi' })
+      return res.status(400).json({ error: "Lokasi barang wajib diisi" });
     }
 
     if (!payload.image) {
-      return res.status(400).json({ error: 'Gambar barang wajib diisi' })
+      return res.status(400).json({ error: "Gambar barang wajib diisi" });
     }
 
     const result = await pool.query(
@@ -1281,25 +1422,26 @@ app.post('/api/items', auth, isAdmin, async (req, res) => {
         payload.location,
         Number(payload.price || 0),
         payload.image,
-        payload.serviceMode
-      ]
-    )
+        payload.serviceMode,
+      ],
+    );
 
-    res.json(mapItemRow(result.rows[0]))
+    res.json(mapItemRow(result.rows[0]));
   } catch (error) {
-    console.error('Create item error:', error)
+    console.error("Create item error:", error);
 
     res.status(400).json({
-      error: getPgErrorMessage(error)
-    })
+      error: getPgErrorMessage(error),
+    });
   }
-})
+});
 
-app.put('/api/items/:id', auth, isAdmin, async (req, res) => {
+app.put("/api/items/:id", auth, isAdmin, async (req, res) => {
   try {
-    const existing = await findItemRowById(req.params.id)
+    const existing = await findItemRowById(req.params.id);
 
-    if (!existing) return res.status(404).json({ error: 'Barang tidak ditemukan' })
+    if (!existing)
+      return res.status(404).json({ error: "Barang tidak ditemukan" });
 
     const payload = {
       name: cleanText(req.body.name ?? existing.name),
@@ -1307,31 +1449,33 @@ app.put('/api/items/:id', auth, isAdmin, async (req, res) => {
       category: cleanText(req.body.category ?? existing.category),
       stock: toNonNegativeNumber(req.body.stock ?? existing.stock, 0),
       minStock: toNonNegativeNumber(req.body.minStock ?? existing.min_stock, 0),
-      condition: cleanText(req.body.condition ?? existing.condition) || 'Baik',
+      condition: cleanText(req.body.condition ?? existing.condition) || "Baik",
       location: cleanText(req.body.location ?? existing.location),
       price: toNonNegativeNumber(req.body.price ?? existing.price, 0),
       image: cleanText(req.body.image ?? existing.image),
-      serviceMode: normalizeServiceMode(req.body.serviceMode ?? existing.service_mode ?? 'both')
-    }
+      serviceMode: normalizeServiceMode(
+        req.body.serviceMode ?? existing.service_mode ?? "both",
+      ),
+    };
 
     if (!payload.name) {
-      return res.status(400).json({ error: 'Nama barang wajib diisi' })
+      return res.status(400).json({ error: "Nama barang wajib diisi" });
     }
 
     if (!payload.code) {
-      return res.status(400).json({ error: 'Kode barang wajib diisi' })
+      return res.status(400).json({ error: "Kode barang wajib diisi" });
     }
 
     if (!payload.category) {
-      return res.status(400).json({ error: 'Kategori barang wajib diisi' })
+      return res.status(400).json({ error: "Kategori barang wajib diisi" });
     }
 
     if (!payload.location) {
-      return res.status(400).json({ error: 'Lokasi barang wajib diisi' })
+      return res.status(400).json({ error: "Lokasi barang wajib diisi" });
     }
 
     if (!payload.image) {
-      return res.status(400).json({ error: 'Gambar barang wajib diisi' })
+      return res.status(400).json({ error: "Gambar barang wajib diisi" });
     }
 
     const result = await pool.query(
@@ -1362,63 +1506,65 @@ app.put('/api/items/:id', auth, isAdmin, async (req, res) => {
         Number(payload.price || 0),
         payload.image,
         payload.serviceMode,
-        Number(req.params.id)
-      ]
-    )
+        Number(req.params.id),
+      ],
+    );
 
-    res.json(mapItemRow(result.rows[0]))
+    res.json(mapItemRow(result.rows[0]));
   } catch (error) {
-    console.error('Update item error:', error)
+    console.error("Update item error:", error);
 
     res.status(400).json({
-      error: getPgErrorMessage(error)
-    })
+      error: getPgErrorMessage(error),
+    });
   }
-})
+});
 
-app.delete('/api/items/:id', auth, isAdmin, async (req, res) => {
+app.delete("/api/items/:id", auth, isAdmin, async (req, res) => {
   try {
-    await pool.query('DELETE FROM items WHERE id = $1', [Number(req.params.id)])
-    res.json({ ok: true })
+    await pool.query("DELETE FROM items WHERE id = $1", [
+      Number(req.params.id),
+    ]);
+    res.json({ ok: true });
   } catch (error) {
-    res.status(400).json({ error: getPgErrorMessage(error) })
+    res.status(400).json({ error: getPgErrorMessage(error) });
   }
-})
+});
 
-app.get('/api/transactions', auth, isAdmin, async (_req, res) => {
+app.get("/api/transactions", auth, isAdmin, async (_req, res) => {
   try {
-    res.json(await getTransactions())
+    res.json(await getTransactions());
   } catch (error) {
-    res.status(500).json({ error: getPgErrorMessage(error) })
+    res.status(500).json({ error: getPgErrorMessage(error) });
   }
-})
+});
 
-app.post('/api/transactions/in', auth, isAdmin, async (req, res) => {
-  const { itemId, quantity, notes, totalPrice } = req.body
+app.post("/api/transactions/in", auth, isAdmin, async (req, res) => {
+  const { itemId, quantity, notes, totalPrice } = req.body;
 
-  const cleanItemId = Number(itemId)
-  const cleanQuantity = toPositiveInteger(quantity, 1)
-  const cleanTotalPrice = toNonNegativeNumber(totalPrice, 0)
+  const cleanItemId = Number(itemId);
+  const cleanQuantity = toPositiveInteger(quantity, 1);
+  const cleanTotalPrice = toNonNegativeNumber(totalPrice, 0);
 
   if (!cleanItemId) {
-    return res.status(400).json({ error: 'Barang wajib dipilih' })
+    return res.status(400).json({ error: "Barang wajib dipilih" });
   }
 
   if (cleanQuantity < 1) {
-    return res.status(400).json({ error: 'Jumlah barang masuk minimal 1' })
+    return res.status(400).json({ error: "Jumlah barang masuk minimal 1" });
   }
 
-  const item = await findItemRowById(cleanItemId)
+  const item = await findItemRowById(cleanItemId);
 
-  if (!item) return res.status(404).json({ error: 'Barang tidak ditemukan' })
+  if (!item) return res.status(404).json({ error: "Barang tidak ditemukan" });
 
-  await pool.query('BEGIN')
+  await pool.query("BEGIN");
 
   try {
-    await pool.query(
-      'UPDATE items SET stock = stock + $1 WHERE id = $2',
-      [cleanQuantity, cleanItemId]
-    )
+    await pool.query("UPDATE items SET stock = stock + $1 WHERE id = $2", [
+      cleanQuantity,
+      cleanItemId,
+    ]);
 
     const transResult = await pool.query(
       `
@@ -1439,53 +1585,53 @@ app.post('/api/transactions/in', auth, isAdmin, async (req, res) => {
       [
         cleanItemId,
         item.name,
-        'in',
+        "in",
         cleanQuantity,
         todayISO(),
         req.user.id,
         req.user.fullName,
-        notes || '',
-        cleanTotalPrice
-      ]
-    )
+        notes || "",
+        cleanTotalPrice,
+      ],
+    );
 
-    await pool.query('COMMIT')
-    res.json(mapTransactionRow(transResult.rows[0]))
+    await pool.query("COMMIT");
+    res.json(mapTransactionRow(transResult.rows[0]));
   } catch (error) {
-    await pool.query('ROLLBACK')
-    res.status(500).json({ error: getPgErrorMessage(error) })
+    await pool.query("ROLLBACK");
+    res.status(500).json({ error: getPgErrorMessage(error) });
   }
-})
+});
 
-app.post('/api/transactions/out', auth, isAdmin, async (req, res) => {
-  const { itemId, quantity, notes } = req.body
+app.post("/api/transactions/out", auth, isAdmin, async (req, res) => {
+  const { itemId, quantity, notes } = req.body;
 
-  const cleanItemId = Number(itemId)
-  const cleanQuantity = toPositiveInteger(quantity, 1)
+  const cleanItemId = Number(itemId);
+  const cleanQuantity = toPositiveInteger(quantity, 1);
 
   if (!cleanItemId) {
-    return res.status(400).json({ error: 'Barang wajib dipilih' })
+    return res.status(400).json({ error: "Barang wajib dipilih" });
   }
 
   if (cleanQuantity < 1) {
-    return res.status(400).json({ error: 'Jumlah barang keluar minimal 1' })
+    return res.status(400).json({ error: "Jumlah barang keluar minimal 1" });
   }
 
-  const item = await findItemRowById(cleanItemId)
+  const item = await findItemRowById(cleanItemId);
 
-  if (!item) return res.status(404).json({ error: 'Barang tidak ditemukan' })
+  if (!item) return res.status(404).json({ error: "Barang tidak ditemukan" });
 
   if (Number(item.stock || 0) < cleanQuantity) {
-    return res.status(400).json({ error: 'Stok tidak cukup' })
+    return res.status(400).json({ error: "Stok tidak cukup" });
   }
 
-  await pool.query('BEGIN')
+  await pool.query("BEGIN");
 
   try {
-    await pool.query(
-      'UPDATE items SET stock = stock - $1 WHERE id = $2',
-      [cleanQuantity, cleanItemId]
-    )
+    await pool.query("UPDATE items SET stock = stock - $1 WHERE id = $2", [
+      cleanQuantity,
+      cleanItemId,
+    ]);
 
     const transResult = await pool.query(
       `
@@ -1506,50 +1652,51 @@ app.post('/api/transactions/out', auth, isAdmin, async (req, res) => {
       [
         cleanItemId,
         item.name,
-        'out',
+        "out",
         cleanQuantity,
         todayISO(),
         req.user.id,
         req.user.fullName,
-        notes || '',
-        0
-      ]
-    )
+        notes || "",
+        0,
+      ],
+    );
 
-    await pool.query('COMMIT')
-    res.json(mapTransactionRow(transResult.rows[0]))
+    await pool.query("COMMIT");
+    res.json(mapTransactionRow(transResult.rows[0]));
   } catch (error) {
-    await pool.query('ROLLBACK')
-    res.status(500).json({ error: getPgErrorMessage(error) })
+    await pool.query("ROLLBACK");
+    res.status(500).json({ error: getPgErrorMessage(error) });
   }
-})
+});
 
-app.get('/api/borrowings', async (req, res) => {
+app.get("/api/borrowings", async (req, res) => {
   try {
-    const hasPagination = req.query.page || req.query.limit || req.query.filter || req.query.search
+    const hasPagination =
+      req.query.page || req.query.limit || req.query.filter || req.query.search;
 
     if (!hasPagination) {
-      return res.json(await getBorrowings())
+      return res.json(await getBorrowings());
     }
 
-    const { page, limit, offset } = getPagination(req, 10)
-    const filter = cleanText(req.query.filter || 'all')
-    const search = cleanText(req.query.search || '').toLowerCase()
+    const { page, limit, offset } = getPagination(req, 10);
+    const filter = cleanText(req.query.filter || "all");
+    const search = cleanText(req.query.search || "").toLowerCase();
 
-    const where = []
-    const params = []
+    const where = [];
+    const params = [];
 
-    if (filter && filter !== 'all') {
-      if (filter === 'return-pending') {
-        where.push(`status = 'borrowed' AND return_request_status = 'pending'`)
+    if (filter && filter !== "all") {
+      if (filter === "return-pending") {
+        where.push(`status = 'borrowed' AND return_request_status = 'pending'`);
       } else {
-        params.push(filter)
-        where.push(`status = $${params.length}`)
+        params.push(filter);
+        where.push(`status = $${params.length}`);
       }
     }
 
     if (search) {
-      params.push(`%${search}%`)
+      params.push(`%${search}%`);
       where.push(`
         (
           LOWER(COALESCE(borrower_name, '')) LIKE $${params.length}
@@ -1560,12 +1707,10 @@ app.get('/api/borrowings', async (req, res) => {
           OR LOWER(COALESCE(status, '')) LIKE $${params.length}
           OR LOWER(COALESCE(notes, '')) LIKE $${params.length}
         )
-      `)
+      `);
     }
 
-    const whereSql = where.length > 0
-      ? `WHERE ${where.join(' AND ')}`
-      : ''
+    const whereSql = where.length > 0 ? `WHERE ${where.join(" AND ")}` : "";
 
     const totalResult = await pool.query(
       `
@@ -1573,10 +1718,10 @@ app.get('/api/borrowings', async (req, res) => {
       FROM borrowings
       ${whereSql}
       `,
-      params
-    )
+      params,
+    );
 
-    const total = totalResult.rows[0]?.total || 0
+    const total = totalResult.rows[0]?.total || 0;
 
     const dataResult = await pool.query(
       `
@@ -1587,24 +1732,24 @@ app.get('/api/borrowings', async (req, res) => {
       LIMIT $${params.length + 1}
       OFFSET $${params.length + 2}
       `,
-      [...params, limit, offset]
-    )
+      [...params, limit, offset],
+    );
 
     return res.json(
       makePaginationResponse({
         data: dataResult.rows.map(mapBorrowingRow),
         page,
         limit,
-        total
-      })
-    )
+        total,
+      }),
+    );
   } catch (error) {
-    console.error('Get borrowings error:', error)
-    res.status(500).json({ error: getPgErrorMessage(error) })
+    console.error("Get borrowings error:", error);
+    res.status(500).json({ error: getPgErrorMessage(error) });
   }
-})
+});
 
-app.post('/api/borrowings', async (req, res) => {
+app.post("/api/borrowings", async (req, res) => {
   try {
     const {
       borrowType,
@@ -1619,72 +1764,84 @@ app.post('/api/borrowings', async (req, res) => {
       paymentProof,
       paymentProofName,
       rentalDurationDays,
-      rentalTotalPrice
-    } = req.body
+      rentalTotalPrice,
+    } = req.body;
 
-    const config = await getPublicConfig()
-    const normalizedBorrowType = normalizeBorrowType(borrowType || 'peminjaman')
-    const item = await findItemRowById(itemId)
-    const requestedBorrowDate = borrowDate || todayISO()
-    const submittedAt = todayISO()
-    const normalizedPaymentProof = cleanBase64Image(paymentProof)
-    const cleanQuantity = toPositiveInteger(quantity, 1)
+    const config = await getPublicConfig();
+    const normalizedBorrowType = normalizeBorrowType(
+      borrowType || "peminjaman",
+    );
+    const item = await findItemRowById(itemId);
+    const requestedBorrowDate = borrowDate || todayISO();
+    const submittedAt = todayISO();
+    const normalizedPaymentProof = cleanBase64Image(paymentProof);
+    const cleanQuantity = toPositiveInteger(quantity, 1);
 
-    if (!item) return res.status(404).json({ error: 'Item tidak ditemukan' })
+    if (!item) return res.status(404).json({ error: "Item tidak ditemukan" });
 
-    const mappedItem = mapItemRow(item)
+    const mappedItem = mapItemRow(item);
 
     if (!isItemAllowedForType(mappedItem, normalizedBorrowType)) {
       return res.status(400).json({
-        error: normalizedBorrowType === 'penyewaan'
-          ? 'Barang ini tidak tersedia untuk penyewaan'
-          : 'Barang ini tidak tersedia untuk peminjaman'
-      })
+        error:
+          normalizedBorrowType === "penyewaan"
+            ? "Barang ini tidak tersedia untuk penyewaan"
+            : "Barang ini tidak tersedia untuk peminjaman",
+      });
     }
 
     if (!cleanText(borrowerName) || !cleanText(borrowerPhone)) {
-      return res.status(400).json({ error: 'Nama dan no HP wajib diisi' })
+      return res.status(400).json({ error: "Nama dan no HP wajib diisi" });
     }
 
     if (!expectedReturn) {
-      return res.status(400).json({ error: 'Tanggal pengembalian wajib diisi' })
+      return res
+        .status(400)
+        .json({ error: "Tanggal pengembalian wajib diisi" });
     }
 
     if (expectedReturn < requestedBorrowDate) {
-      return res.status(400).json({ error: 'Tanggal pengembalian tidak boleh lebih awal dari tanggal pinjam' })
+      return res
+        .status(400)
+        .json({
+          error:
+            "Tanggal pengembalian tidak boleh lebih awal dari tanggal pinjam",
+        });
     }
 
     if (cleanQuantity < 1) {
-      return res.status(400).json({ error: 'Jumlah minimal harus 1' })
+      return res.status(400).json({ error: "Jumlah minimal harus 1" });
     }
 
     if (Number(item.stock || 0) < cleanQuantity) {
-      return res.status(400).json({ error: 'Stok barang tidak mencukupi' })
+      return res.status(400).json({ error: "Stok barang tidak mencukupi" });
     }
 
-    if (normalizedBorrowType === 'penyewaan' && !normalizedPaymentProof) {
-      return res.status(400).json({ error: 'Bukti pembayaran wajib diupload untuk penyewaan' })
+    if (normalizedBorrowType === "penyewaan" && !normalizedPaymentProof) {
+      return res
+        .status(400)
+        .json({ error: "Bukti pembayaran wajib diupload untuk penyewaan" });
     }
 
     const serverRentalDurationDays =
-      normalizedBorrowType === 'penyewaan'
+      normalizedBorrowType === "penyewaan"
         ? rentalDays(requestedBorrowDate, expectedReturn)
-        : 0
+        : 0;
 
     const serverRentalTotalPrice =
-      normalizedBorrowType === 'penyewaan'
+      normalizedBorrowType === "penyewaan"
         ? Number(item.price || 0) * cleanQuantity * serverRentalDurationDays
-        : 0
+        : 0;
 
     const finalRentalDurationDays =
-      normalizedBorrowType === 'penyewaan'
+      normalizedBorrowType === "penyewaan"
         ? Number(rentalDurationDays || serverRentalDurationDays || 1)
-        : 0
+        : 0;
 
     const finalRentalTotalPrice =
-      normalizedBorrowType === 'penyewaan'
+      normalizedBorrowType === "penyewaan"
         ? Number(rentalTotalPrice || serverRentalTotalPrice || 0)
-        : 0
+        : 0;
 
     const insertBorrowing = await pool.query(
       `
@@ -1734,15 +1891,15 @@ app.post('/api/borrowings', async (req, res) => {
         item.name,
         cleanText(borrowerName),
         cleanText(borrowerPhone),
-        borrowerAddress || '',
+        borrowerAddress || "",
         cleanQuantity,
-        'pending',
-        notes || '',
+        "pending",
+        notes || "",
         submittedAt,
         requestedBorrowDate,
         null,
         null,
-        expectedReturn || '',
+        expectedReturn || "",
         null,
         diffDays(requestedBorrowDate, expectedReturn),
         finalRentalDurationDays,
@@ -1752,32 +1909,32 @@ app.post('/api/borrowings', async (req, res) => {
         null,
         null,
         null,
-        '',
-        '',
-        '',
-        normalizedPaymentProof || '',
-        paymentProofName || '',
-        normalizedBorrowType === 'penyewaan' ? 'pending_verification' : null,
+        "",
+        "",
+        "",
+        normalizedPaymentProof || "",
+        paymentProofName || "",
+        normalizedBorrowType === "penyewaan" ? "pending_verification" : null,
         null,
-        null
-      ]
-    )
+        null,
+      ],
+    );
 
-    let borrowingRow = insertBorrowing.rows[0]
+    let borrowingRow = insertBorrowing.rows[0];
 
-    if (normalizedBorrowType === 'penyewaan') {
-      const borrowing = mapBorrowingRow(borrowingRow)
+    if (normalizedBorrowType === "penyewaan") {
+      const borrowing = mapBorrowingRow(borrowingRow);
 
       const waResult = await sendWhatsappNotification({
         config,
-        borrowing
-      })
+        borrowing,
+      });
 
       const whatsappStatus = waResult.success
-        ? 'sent'
+        ? "sent"
         : waResult.skipped
-        ? 'skipped'
-        : 'failed'
+          ? "skipped"
+          : "failed";
 
       const updateWa = await pool.query(
         `
@@ -1786,47 +1943,49 @@ app.post('/api/borrowings', async (req, res) => {
         WHERE id = $3
         RETURNING *
         `,
-        [whatsappStatus, JSON.stringify(waResult), borrowingRow.id]
-      )
+        [whatsappStatus, JSON.stringify(waResult), borrowingRow.id],
+      );
 
-      borrowingRow = updateWa.rows[0]
+      borrowingRow = updateWa.rows[0];
     }
 
-    res.json(mapBorrowingRow(borrowingRow))
+    res.json(mapBorrowingRow(borrowingRow));
   } catch (error) {
-    console.error('Create borrowing error:', error)
-    res.status(500).json({ error: getPgErrorMessage(error) })
+    console.error("Create borrowing error:", error);
+    res.status(500).json({ error: getPgErrorMessage(error) });
   }
-})
+});
 
-app.patch('/api/borrowings/:id/approve', auth, isAdmin, async (req, res) => {
-  const borrowingRow = await findBorrowingRowById(req.params.id)
+app.patch("/api/borrowings/:id/approve", auth, isAdmin, async (req, res) => {
+  const borrowingRow = await findBorrowingRowById(req.params.id);
 
-  if (!borrowingRow) return res.status(404).json({ error: 'Data pengajuan tidak ditemukan' })
+  if (!borrowingRow)
+    return res.status(404).json({ error: "Data pengajuan tidak ditemukan" });
 
-  if (borrowingRow.status !== 'pending') {
-    return res.status(400).json({ error: 'Status tidak valid' })
+  if (borrowingRow.status !== "pending") {
+    return res.status(400).json({ error: "Status tidak valid" });
   }
 
-  const itemRow = await findItemRowById(borrowingRow.item_id)
+  const itemRow = await findItemRowById(borrowingRow.item_id);
 
-  if (!itemRow) return res.status(404).json({ error: 'Barang tidak ditemukan' })
+  if (!itemRow)
+    return res.status(404).json({ error: "Barang tidak ditemukan" });
 
   if (!isItemAllowedForType(mapItemRow(itemRow), borrowingRow.borrow_type)) {
-    return res.status(400).json({ error: 'Jenis layanan barang tidak sesuai' })
+    return res.status(400).json({ error: "Jenis layanan barang tidak sesuai" });
   }
 
   if (Number(itemRow.stock || 0) < Number(borrowingRow.quantity || 0)) {
-    return res.status(400).json({ error: 'Stok tidak cukup' })
+    return res.status(400).json({ error: "Stok tidak cukup" });
   }
 
-  await pool.query('BEGIN')
+  await pool.query("BEGIN");
 
   try {
-    await pool.query(
-      `UPDATE items SET stock = stock - $1 WHERE id = $2`,
-      [Number(borrowingRow.quantity || 0), borrowingRow.item_id]
-    )
+    await pool.query(`UPDATE items SET stock = stock - $1 WHERE id = $2`, [
+      Number(borrowingRow.quantity || 0),
+      borrowingRow.item_id,
+    ]);
 
     const updateBorrowing = await pool.query(
       `
@@ -1839,8 +1998,13 @@ app.patch('/api/borrowings/:id/approve', auth, isAdmin, async (req, res) => {
       WHERE id = $4
       RETURNING *
       `,
-      ['borrowed', todayISO(), borrowingRow.requested_borrow_date || todayISO(), borrowingRow.id]
-    )
+      [
+        "borrowed",
+        todayISO(),
+        borrowingRow.requested_borrow_date || todayISO(),
+        borrowingRow.id,
+      ],
+    );
 
     await pool.query(
       `
@@ -1860,32 +2024,33 @@ app.patch('/api/borrowings/:id/approve', auth, isAdmin, async (req, res) => {
       [
         borrowingRow.item_id,
         borrowingRow.item_name,
-        'out',
+        "out",
         Number(borrowingRow.quantity || 0),
         todayISO(),
         req.user.id,
         req.user.fullName,
-        `${borrowingRow.borrow_type === 'penyewaan' ? 'Penyewaan' : 'Peminjaman'} disetujui`,
-        0
-      ]
-    )
+        `${borrowingRow.borrow_type === "penyewaan" ? "Penyewaan" : "Peminjaman"} disetujui`,
+        0,
+      ],
+    );
 
-    await pool.query('COMMIT')
-    res.json(mapBorrowingRow(updateBorrowing.rows[0]))
+    await pool.query("COMMIT");
+    res.json(mapBorrowingRow(updateBorrowing.rows[0]));
   } catch (error) {
-    await pool.query('ROLLBACK')
-    res.status(500).json({ error: getPgErrorMessage(error) })
+    await pool.query("ROLLBACK");
+    res.status(500).json({ error: getPgErrorMessage(error) });
   }
-})
+});
 
-app.patch('/api/borrowings/:id/reject', auth, isAdmin, async (req, res) => {
+app.patch("/api/borrowings/:id/reject", auth, isAdmin, async (req, res) => {
   try {
-    const borrowingRow = await findBorrowingRowById(req.params.id)
+    const borrowingRow = await findBorrowingRowById(req.params.id);
 
-    if (!borrowingRow) return res.status(404).json({ error: 'Data pengajuan tidak ditemukan' })
+    if (!borrowingRow)
+      return res.status(404).json({ error: "Data pengajuan tidak ditemukan" });
 
-    if (borrowingRow.status !== 'pending') {
-      return res.status(400).json({ error: 'Status tidak valid' })
+    if (borrowingRow.status !== "pending") {
+      return res.status(400).json({ error: "Status tidak valid" });
     }
 
     const result = await pool.query(
@@ -1895,16 +2060,16 @@ app.patch('/api/borrowings/:id/reject', auth, isAdmin, async (req, res) => {
       WHERE id = $2
       RETURNING *
       `,
-      ['rejected', borrowingRow.id]
-    )
+      ["rejected", borrowingRow.id],
+    );
 
-    res.json(mapBorrowingRow(result.rows[0]))
+    res.json(mapBorrowingRow(result.rows[0]));
   } catch (error) {
-    res.status(500).json({ error: getPgErrorMessage(error) })
+    res.status(500).json({ error: getPgErrorMessage(error) });
   }
-})
+});
 
-app.post('/api/borrowings/:id/request-return', async (req, res) => {
+app.post("/api/borrowings/:id/request-return", async (req, res) => {
   try {
     const result = await createPublicReturnRequest({
       borrowingId: Number(req.params.id),
@@ -1913,62 +2078,70 @@ app.post('/api/borrowings/:id/request-return', async (req, res) => {
       returnerPhone: req.body.returnerPhone,
       conditionOnReturn: req.body.conditionOnReturn,
       returnNotes: req.body.returnNotes,
-      returnPhoto: req.body.returnPhoto
-    })
+      returnPhoto: req.body.returnPhoto,
+    });
 
     if (!result.ok) {
-      return res.status(result.status).json({ error: result.error })
+      return res.status(result.status).json({ error: result.error });
     }
 
-    return res.json(result.payload)
+    return res.json(result.payload);
   } catch (error) {
-    return res.status(500).json({ error: getPgErrorMessage(error) })
+    return res.status(500).json({ error: getPgErrorMessage(error) });
   }
-})
+});
 
-app.post('/api/borrowings/:id/verify-return', auth, isAdmin, async (req, res) => {
-  try {
-    const result = await verifyBorrowingReturnById({
-      borrowingId: req.params.id,
-      adminName: req.user.fullName,
-      adminUserId: req.user.id
-    })
+app.post(
+  "/api/borrowings/:id/verify-return",
+  auth,
+  isAdmin,
+  async (req, res) => {
+    try {
+      const result = await verifyBorrowingReturnById({
+        borrowingId: req.params.id,
+        adminName: req.user.fullName,
+        adminUserId: req.user.id,
+      });
 
-    if (!result.ok) {
-      return res.status(result.status).json({ error: result.error })
+      if (!result.ok) {
+        return res.status(result.status).json({ error: result.error });
+      }
+
+      return res.json(result.payload);
+    } catch (error) {
+      return res.status(500).json({ error: getPgErrorMessage(error) });
     }
+  },
+);
 
-    return res.json(result.payload)
-  } catch (error) {
-    return res.status(500).json({ error: getPgErrorMessage(error) })
-  }
-})
+app.post("/api/borrowings/:id/return", auth, isAdmin, async (req, res) => {
+  const borrowingRow = await findBorrowingRowById(req.params.id);
 
-app.post('/api/borrowings/:id/return', auth, isAdmin, async (req, res) => {
-  const borrowingRow = await findBorrowingRowById(req.params.id)
+  if (!borrowingRow)
+    return res.status(404).json({ error: "Data pengajuan tidak ditemukan" });
 
-  if (!borrowingRow) return res.status(404).json({ error: 'Data pengajuan tidak ditemukan' })
-
-  if (borrowingRow.return_request_status !== 'pending') {
+  if (borrowingRow.return_request_status !== "pending") {
     return res.status(400).json({
-      error: 'Pengembalian harus melalui form terlebih dahulu sebelum diverifikasi admin'
-    })
+      error:
+        "Pengembalian harus melalui form terlebih dahulu sebelum diverifikasi admin",
+    });
   }
 
   return res.status(400).json({
-    error: 'Gunakan endpoint verifikasi pengembalian, bukan konfirmasi langsung'
-  })
-})
+    error:
+      "Gunakan endpoint verifikasi pengembalian, bukan konfirmasi langsung",
+  });
+});
 
-app.get('/api/returns-public', auth, isAdmin, async (_req, res) => {
+app.get("/api/returns-public", auth, isAdmin, async (_req, res) => {
   try {
-    res.json(await getPublicReturns())
+    res.json(await getPublicReturns());
   } catch (error) {
-    res.status(500).json({ error: getPgErrorMessage(error) })
+    res.status(500).json({ error: getPgErrorMessage(error) });
   }
-})
+});
 
-app.post('/api/returns-public', async (req, res) => {
+app.post("/api/returns-public", async (req, res) => {
   try {
     const result = await createPublicReturnRequest({
       borrowingId: req.body.borrowingId,
@@ -1977,59 +2150,72 @@ app.post('/api/returns-public', async (req, res) => {
       returnerPhone: req.body.returnerPhone,
       conditionOnReturn: req.body.conditionOnReturn,
       returnNotes: req.body.returnNotes,
-      returnPhoto: req.body.returnPhoto
-    })
+      returnPhoto: req.body.returnPhoto,
+    });
 
     if (!result.ok) {
-      return res.status(result.status).json({ error: result.error })
+      return res.status(result.status).json({ error: result.error });
     }
 
-    return res.json(result.payload)
+    return res.json(result.payload);
   } catch (error) {
-    return res.status(500).json({ error: getPgErrorMessage(error) })
+    return res.status(500).json({ error: getPgErrorMessage(error) });
   }
-})
+});
 
-app.post('/api/returns-public/:id/verify', auth, isAdmin, async (req, res) => {
+app.post("/api/returns-public/:id/verify", auth, isAdmin, async (req, res) => {
   try {
     const returnResult = await pool.query(
-      'SELECT * FROM public_returns WHERE id = $1 LIMIT 1',
-      [Number(req.params.id)]
-    )
-    const row = returnResult.rows[0]
+      "SELECT * FROM public_returns WHERE id = $1 LIMIT 1",
+      [Number(req.params.id)],
+    );
+    const row = returnResult.rows[0];
 
     if (!row) {
-      return res.status(404).json({ error: 'Data return tidak ditemukan' })
+      return res.status(404).json({ error: "Data return tidak ditemukan" });
     }
 
     const result = await verifyBorrowingReturnById({
       borrowingId: row.borrowing_id,
       adminName: req.user.fullName,
-      adminUserId: req.user.id
-    })
+      adminUserId: req.user.id,
+    });
 
     if (!result.ok) {
-      return res.status(result.status).json({ error: result.error })
+      return res.status(result.status).json({ error: result.error });
     }
 
-    return res.json(result.payload)
+    return res.json(result.payload);
   } catch (error) {
-    return res.status(500).json({ error: getPgErrorMessage(error) })
+    return res.status(500).json({ error: getPgErrorMessage(error) });
   }
-})
+});
 
-app.get('/', (_req, res) => res.send('Inventory API OK'))
+//app.get('/', (_req, res) => res.send('Inventory API OK'))
+import path from "path";
+import { fileURLToPath } from "url";
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+// 🔥 serve React build
+app.use(express.static(path.join(__dirname, "public")));
+
+// 🔥 fallback React (HARUS paling bawah)
+app.get("*", (req, res) => {
+  res.sendFile(path.join(__dirname, "public", "index.html"));
+});
 
 async function startServer() {
-  await initDatabase()
-  await bootstrapMysqlConnection()
+  await initDatabase();
+  await bootstrapMysqlConnection();
 
   app.listen(PORT, () => {
-    console.log(`Server running on http://localhost:${PORT}`)
-  })
+    console.log(`Server running on http://localhost:${PORT}`);
+  });
 }
 
-startServer().catch(error => {
-  console.error('Failed to start server:', error?.message || error)
-  process.exit(1)
-})
+startServer().catch((error) => {
+  console.error("Failed to start server:", error?.message || error);
+  process.exit(1);
+});

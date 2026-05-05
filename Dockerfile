@@ -1,26 +1,28 @@
-FROM node:20-alpine
+# FROM node:20-alpine
 
-WORKDIR /app
+# WORKDIR /app
 
-# Copy package file utama
-COPY package*.json ./
+# # Copy package file utama
+# COPY package*.json ./
 
-# Copy package file server dan client
-COPY server/package*.json ./server/
-COPY client/package*.json ./client/
+# # Copy package file server dan client
+# COPY server/package*.json ./server/
+# COPY client/package*.json ./client/
 
-# Install semua dependencies (Root, Server, dan Client)
-RUN npm install
-RUN npm install --prefix server
-RUN npm install --prefix client
+# # Install semua dependencies (Root, Server, dan Client)
+# RUN npm install
+# RUN npm install --prefix server
+# RUN npm install --prefix client
 
-# Copy seluruh source code
-COPY . .
+# # Copy seluruh source code
+# COPY . .
 
-# Expose port (opsional, sesuaikan dengan port vite/server kamu)
-EXPOSE 3000 5000
+# # Expose port (opsional, sesuaikan dengan port vite/server kamu)
+# EXPOSE 3000 5000
 
-CMD ["npm", "run", "dev"]
+# CMD ["npm", "run", "dev"]
+
+
 
 
 
@@ -34,3 +36,22 @@ CMD ["npm", "run", "dev"]
 # COPY . .
 
 # CMD ["npm", "run", "dev"]
+
+
+FROM node:20-alpine
+
+WORKDIR /app
+
+# Install backend deps
+COPY server/package*.json ./server/
+RUN npm install --prefix server
+
+# Copy backend
+COPY server/ ./server/
+
+# 🔥 Copy hasil build frontend
+COPY client/dist ./server/public
+
+EXPOSE 5000
+
+CMD ["node", "server/index.js"]

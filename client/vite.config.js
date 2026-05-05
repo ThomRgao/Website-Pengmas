@@ -6,6 +6,7 @@ export default defineConfig({
   server: {
     host: "0.0.0.0",
     port: 3000,
+    allowedHosts: ["peminjaman.cimaragas-pangatikan.id"],
     proxy: {
       "/api": {
         target: "http://localhost:5000", // Ganti 'server' dengan nama service backend di docker-compose
