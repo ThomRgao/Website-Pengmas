@@ -403,7 +403,7 @@ export default function Borrowing() {
       showToast(
         'success',
         'Berhasil dihapus dari Tracking',
-        'Data berhasil disembunyikan dari menu Tracking Peminjam, tetapi tetap tersimpan untuk laporan.'
+        'Data berhasil dihapus.'
       )
     } catch (err) {
       showToast(
