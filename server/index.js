@@ -2,6 +2,8 @@ import express from "express";
 import cors from "cors";
 import jwt from "jsonwebtoken";
 import dotenv from "dotenv";
+import path from "path";
+import { fileURLToPath } from "url";
 import pool, { testMysqlConnection } from "./db/mysql.js";
 
 dotenv.config();
@@ -13,6 +15,9 @@ app.use(express.json({ limit: "30mb" }));
 const JWT_SECRET =
   process.env.JWT_SECRET || "devsecret_super_secret_replace_me";
 const PORT = Number(process.env.PORT || 5000);
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 function normalizeServiceMode(value) {
   const raw = String(value || "both")
@@ -343,6 +348,7 @@ function mapBorrowingRow(row) {
     paymentStatus: row.payment_status || null,
     whatsappStatus: row.whatsapp_status || null,
     whatsappResponse: row.whatsapp_response || null,
+    hiddenFromTrackingAt: row.hidden_from_tracking_at || null,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -388,6 +394,28 @@ async function ensureColumn(tableName, columnName, definition) {
     ALTER TABLE ${tableName}
     ADD COLUMN IF NOT EXISTS ${columnName} ${definition}
   `);
+}
+
+async function hideOldBorrowingsFromTracking() {
+  await pool.query(`
+    UPDATE borrowings
+    SET
+      hidden_from_tracking_at = NOW(),
+      updated_at = NOW()
+    WHERE hidden_from_tracking_at IS NULL
+      AND status IN ('returned', 'rejected')
+      AND COALESCE(return_date, return_verified_at, updated_at::date, created_at::date) <= CURRENT_DATE - INTERVAL '7 days'
+  `);
+}
+
+function buildTrackingVisibilityWhere() {
+  return `
+    hidden_from_tracking_at IS NULL
+    AND NOT (
+      status IN ('returned', 'rejected')
+      AND COALESCE(return_date, return_verified_at, updated_at::date, created_at::date) <= CURRENT_DATE - INTERVAL '7 days'
+    )
+  `;
 }
 
 async function initDatabase() {
@@ -463,6 +491,7 @@ async function initDatabase() {
       payment_status VARCHAR(50),
       whatsapp_status VARCHAR(50),
       whatsapp_response JSONB,
+      hidden_from_tracking_at TIMESTAMP,
       created_at TIMESTAMP NOT NULL DEFAULT NOW(),
       updated_at TIMESTAMP NOT NULL DEFAULT NOW()
     );
@@ -503,10 +532,17 @@ async function initDatabase() {
     "rental_duration_days",
     "INTEGER NOT NULL DEFAULT 0",
   );
+
   await ensureColumn(
     "borrowings",
     "rental_total_price",
     "BIGINT NOT NULL DEFAULT 0",
+  );
+
+  await ensureColumn(
+    "borrowings",
+    "hidden_from_tracking_at",
+    "TIMESTAMP",
   );
 
   await pool.query(
@@ -676,6 +712,8 @@ async function initDatabase() {
       ],
     );
   }
+
+  await hideOldBorrowingsFromTracking();
 }
 
 async function getUsers() {
@@ -1672,6 +1710,8 @@ app.post("/api/transactions/out", auth, isAdmin, async (req, res) => {
 
 app.get("/api/borrowings", async (req, res) => {
   try {
+    await hideOldBorrowingsFromTracking();
+
     const hasPagination =
       req.query.page || req.query.limit || req.query.filter || req.query.search;
 
@@ -1685,6 +1725,8 @@ app.get("/api/borrowings", async (req, res) => {
 
     const where = [];
     const params = [];
+
+    where.push(buildTrackingVisibilityWhere());
 
     if (filter && filter !== "all") {
       if (filter === "return-pending") {
@@ -1801,12 +1843,10 @@ app.post("/api/borrowings", async (req, res) => {
     }
 
     if (expectedReturn < requestedBorrowDate) {
-      return res
-        .status(400)
-        .json({
-          error:
-            "Tanggal pengembalian tidak boleh lebih awal dari tanggal pinjam",
-        });
+      return res.status(400).json({
+        error:
+          "Tanggal pengembalian tidak boleh lebih awal dari tanggal pinjam",
+      });
     }
 
     if (cleanQuantity < 1) {
@@ -1877,11 +1917,12 @@ app.post("/api/borrowings", async (req, res) => {
         payment_status,
         whatsapp_status,
         whatsapp_response,
+        hidden_from_tracking_at,
         created_at,
         updated_at
       )
       VALUES (
-        $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31,NOW(),NOW()
+        $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31,$32,NOW(),NOW()
       )
       RETURNING *
       `,
@@ -1915,6 +1956,7 @@ app.post("/api/borrowings", async (req, res) => {
         normalizedPaymentProof || "",
         paymentProofName || "",
         normalizedBorrowType === "penyewaan" ? "pending_verification" : null,
+        null,
         null,
         null,
       ],
@@ -2069,6 +2111,49 @@ app.patch("/api/borrowings/:id/reject", auth, isAdmin, async (req, res) => {
   }
 });
 
+app.patch(
+  "/api/borrowings/:id/hide-from-tracking",
+  auth,
+  isAdmin,
+  async (req, res) => {
+    try {
+      const borrowingRow = await findBorrowingRowById(req.params.id);
+
+      if (!borrowingRow) {
+        return res.status(404).json({ error: "Data pengajuan tidak ditemukan" });
+      }
+
+      if (!["returned", "rejected"].includes(borrowingRow.status)) {
+        return res.status(400).json({
+          error:
+            "Data hanya bisa dihapus dari Tracking jika statusnya sudah dikembalikan atau ditolak.",
+        });
+      }
+
+      const result = await pool.query(
+        `
+        UPDATE borrowings
+        SET
+          hidden_from_tracking_at = NOW(),
+          updated_at = NOW()
+        WHERE id = $1
+        RETURNING *
+        `,
+        [borrowingRow.id],
+      );
+
+      return res.json({
+        success: true,
+        message:
+          "Data berhasil disembunyikan dari Tracking. Data tetap tersimpan untuk laporan.",
+        borrowing: mapBorrowingRow(result.rows[0]),
+      });
+    } catch (error) {
+      return res.status(500).json({ error: getPgErrorMessage(error) });
+    }
+  },
+);
+
 app.post("/api/borrowings/:id/request-return", async (req, res) => {
   try {
     const result = await createPublicReturnRequest({
@@ -2191,17 +2276,8 @@ app.post("/api/returns-public/:id/verify", auth, isAdmin, async (req, res) => {
   }
 });
 
-//app.get('/', (_req, res) => res.send('Inventory API OK'))
-import path from "path";
-import { fileURLToPath } from "url";
-
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-
-// 🔥 serve React build
 app.use(express.static(path.join(__dirname, "public")));
 
-// 🔥 fallback React (HARUS paling bawah)
 app.get("*", (req, res) => {
   res.sendFile(path.join(__dirname, "public", "index.html"));
 });

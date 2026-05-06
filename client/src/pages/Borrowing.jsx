@@ -9,7 +9,8 @@ import {
   Info,
   Search,
   ChevronLeft,
-  ChevronRight
+  ChevronRight,
+  Trash2
 } from 'lucide-react'
 import api from '../api'
 
@@ -38,6 +39,13 @@ function borrowTypeLabel(type) {
 
 function formatRupiah(value) {
   return `Rp ${Number(value || 0).toLocaleString('id-ID')}`
+}
+
+function canHideFromTracking(row) {
+  if (!row) return false
+  if (row.status === 'returned') return true
+  if (row.status === 'rejected') return true
+  return false
 }
 
 function CenterToast({ open, type = 'success', title, message, onClose }) {
@@ -171,8 +179,8 @@ export default function Borrowing() {
         }
       })
 
-      setBorrowings(bRes.data?.data || [])
-      setPagination(
+      const responseRows = bRes.data?.data || []
+      const responsePagination =
         bRes.data?.pagination || {
           page: targetPage,
           limit: targetLimit,
@@ -181,8 +189,10 @@ export default function Borrowing() {
           hasPrev: false,
           hasNext: false
         }
-      )
-      setPage(targetPage)
+
+      setBorrowings(responseRows)
+      setPagination(responsePagination)
+      setPage(responsePagination.page || targetPage)
     } catch (err) {
       showToast(
         'error',
@@ -356,6 +366,59 @@ export default function Borrowing() {
     }
   }
 
+  const hideFromTracking = async row => {
+    if (actionLoading.id) return
+
+    if (!canHideFromTracking(row)) {
+      showToast(
+        'warning',
+        'Belum bisa dihapus',
+        'Data hanya bisa dihapus dari Tracking jika statusnya sudah dikembalikan atau ditolak.'
+      )
+      return
+    }
+
+    const ok = confirm(
+      'Hapus data ini dari menu Tracking Peminjam?\n\nData tidak akan hilang dari database dan laporan.'
+    )
+
+    if (!ok) return
+
+    setActionLoading({
+      id: row.id,
+      type: 'hide-tracking'
+    })
+
+    try {
+      await api.patch(`/borrowings/${row.id}/hide-from-tracking`)
+      setDetail(null)
+
+      const nextPage =
+        borrowings.length === 1 && page > 1
+          ? page - 1
+          : page
+
+      await load(nextPage, filter, search, limit)
+
+      showToast(
+        'success',
+        'Berhasil dihapus dari Tracking',
+        'Data berhasil disembunyikan dari menu Tracking Peminjam, tetapi tetap tersimpan untuk laporan.'
+      )
+    } catch (err) {
+      showToast(
+        'error',
+        'Gagal menghapus dari Tracking',
+        err?.response?.data?.error || err?.message || 'Data gagal disembunyikan dari Tracking.'
+      )
+    } finally {
+      setActionLoading({
+        id: null,
+        type: ''
+      })
+    }
+  }
+
   return (
     <div className="space-y-6 animate-fadeIn w-full min-w-0">
       <style>{`
@@ -377,6 +440,9 @@ export default function Borrowing() {
         <h1 className="text-3xl font-bold text-gray-800">Tracking Peminjam</h1>
         <p className="text-gray-600 mt-1">
           Kelola pengajuan peminjaman, penyewaan, bukti pembayaran, dan verifikasi pengembalian barang
+        </p>
+        <p className="text-sm text-gray-500 mt-2">
+          Data yang sudah dikembalikan atau ditolak akan otomatis disembunyikan dari tracking setelah 7 hari, tetapi tetap tersimpan untuk laporan.
         </p>
       </div>
 
@@ -454,7 +520,7 @@ export default function Borrowing() {
             onChange={e => handleFilterChange(e.target.value)}
             disabled={loading || !!actionLoading.id}
           >
-            <option value="all">Semua Data</option>
+            <option value="all">Semua Data Aktif Tracking</option>
             <option value="pending">Pending</option>
             <option value="borrowed">Sedang Dipinjam / Disewa</option>
             <option value="return-pending">Menunggu Verifikasi Return</option>
@@ -474,7 +540,7 @@ export default function Borrowing() {
 
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 pt-1">
           <div className="text-sm text-gray-600">
-            Menampilkan halaman <b>{pagination.page}</b> dari <b>{pagination.totalPages}</b> • Total <b>{pagination.total}</b> data
+            Menampilkan halaman <b>{pagination.page}</b> dari <b>{pagination.totalPages}</b> • Total <b>{pagination.total}</b> data aktif tracking
           </div>
 
           <div className="flex items-center gap-2">
@@ -496,7 +562,7 @@ export default function Borrowing() {
 
       <div className="card p-0 overflow-hidden w-full min-w-0">
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[1400px]">
+          <table className="w-full min-w-[1500px]">
             <thead>
               <tr className="border-b border-gray-200 bg-gray-50">
                 <th className="text-left p-4 font-semibold text-gray-700">Nama</th>
@@ -637,6 +703,18 @@ export default function Borrowing() {
                           {isProcessing(row.id, 'verify-return') ? 'Memproses...' : 'Verifikasi'}
                         </button>
                       )}
+
+                      {canHideFromTracking(row) && (
+                        <button
+                          onClick={() => hideFromTracking(row)}
+                          disabled={!!actionLoading.id}
+                          className="px-3 py-1 rounded-lg bg-slate-700 text-white inline-flex items-center gap-1 disabled:opacity-60 disabled:cursor-not-allowed"
+                          title="Hapus dari menu Tracking, data tetap ada di laporan"
+                        >
+                          <Trash2 size={16} />
+                          {isProcessing(row.id, 'hide-tracking') ? 'Menghapus...' : 'Hapus Tracking'}
+                        </button>
+                      )}
                     </div>
                   </td>
                 </tr>
@@ -645,7 +723,7 @@ export default function Borrowing() {
               {borrowings.length === 0 && (
                 <tr>
                   <td className="p-6 text-gray-500" colSpan={9}>
-                    {loading ? 'Memuat data...' : 'Tidak ada data'}
+                    {loading ? 'Memuat data...' : 'Tidak ada data aktif di menu tracking'}
                   </td>
                 </tr>
               )}
@@ -655,7 +733,7 @@ export default function Borrowing() {
 
         <div className="border-t border-gray-100 p-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
           <div className="text-sm text-gray-600">
-            Halaman <b>{pagination.page}</b> dari <b>{pagination.totalPages}</b> • Total <b>{pagination.total}</b> data
+            Halaman <b>{pagination.page}</b> dari <b>{pagination.totalPages}</b> • Total <b>{pagination.total}</b> data aktif tracking
           </div>
 
           <div className="flex items-center gap-2">
@@ -693,9 +771,23 @@ export default function Borrowing() {
                     Detail lengkap peminjaman / penyewaan dan pengembaliannya
                   </p>
                 </div>
-                <button className="btn-icon shrink-0" onClick={() => setDetail(null)}>
-                  ✕
-                </button>
+
+                <div className="flex items-center gap-2">
+                  {canHideFromTracking(detail) && (
+                    <button
+                      className="px-3 py-2 rounded-xl bg-slate-800 text-white text-sm font-semibold inline-flex items-center gap-2 disabled:opacity-60 disabled:cursor-not-allowed"
+                      onClick={() => hideFromTracking(detail)}
+                      disabled={!!actionLoading.id}
+                    >
+                      <Trash2 size={16} />
+                      {isProcessing(detail.id, 'hide-tracking') ? 'Menghapus...' : 'Hapus dari Tracking'}
+                    </button>
+                  )}
+
+                  <button className="btn-icon shrink-0" onClick={() => setDetail(null)}>
+                    ✕
+                  </button>
+                </div>
               </div>
 
               <div className="overflow-y-auto px-6 py-6">
@@ -711,6 +803,7 @@ export default function Borrowing() {
                         <p><b>Alamat:</b> {detail.borrowerAddress || '-'}</p>
                         <p><b>Jenis:</b> {borrowTypeLabel(detail.borrowType)}</p>
                         <p><b>Status:</b> {statusLabel(detail)}</p>
+                        <p><b>Disembunyikan dari Tracking:</b> {detail.hiddenFromTrackingAt || 'Belum'}</p>
                       </div>
                     </div>
 
@@ -800,6 +893,17 @@ export default function Borrowing() {
                         </pre>
                       </div>
                     )}
+
+                    <div className="rounded-[24px] border border-amber-100 bg-amber-50 p-5">
+                      <p className="text-lg font-bold text-amber-900 mb-2">
+                        Catatan Tracking
+                      </p>
+                      <p className="text-sm text-amber-800 leading-relaxed">
+                        Tombol hapus di halaman ini hanya menyembunyikan data dari menu Tracking Peminjam.
+                        Data tetap tersimpan di database dan tetap bisa dipakai untuk laporan.
+                        Data status dikembalikan atau ditolak juga akan otomatis disembunyikan dari Tracking setelah 7 hari.
+                      </p>
+                    </div>
                   </div>
                 </div>
               </div>
